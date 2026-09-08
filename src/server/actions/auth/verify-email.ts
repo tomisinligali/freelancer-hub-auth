@@ -8,28 +8,29 @@ export interface VerifyEmailResponse {
   message?: string;
 }
 
-export async function verifyEmailAction(token: string): Promise<VerifyEmailResponse> {
-  if (!token || typeof token !== "string") {
-    return { success: false, error: "Verification token is required." };
+export async function verifyEmailAction(code: string): Promise<VerifyEmailResponse> {
+  const trimmedCode = typeof code === "string" ? code.trim() : "";
+  if (!trimmedCode) {
+    return { success: false, error: "Verification code is required." };
   }
 
   try {
     const record = await prisma.verificationToken.findUnique({
-      where: { token },
+      where: { token: trimmedCode },
     });
 
     if (!record || record.type !== "email_verification") {
-      return { success: false, error: "Invalid or expired verification link." };
+      return { success: false, error: "Invalid or expired verification code." };
     }
 
     if (new Date() > record.expiresAt) {
-      // Token expired, cleanup
+      // Code expired, cleanup
       await prisma.verificationToken.delete({
         where: { id: record.id },
       });
       return {
         success: false,
-        error: "Verification link has expired. Please sign up again or request a new link.",
+        error: "Verification code has expired. Please request a new one.",
       };
     }
 
@@ -47,7 +48,7 @@ export async function verifyEmailAction(token: string): Promise<VerifyEmailRespo
       data: { emailVerified: new Date() },
     });
 
-    // Delete used token
+    // The verification code can only be used once
     await prisma.verificationToken.delete({
       where: { id: record.id },
     });

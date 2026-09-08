@@ -10,8 +10,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     maxAge: 30 * 24 * 60 * 60, // 30 days session per PRD & Security Rule 9
   },
   pages: {
-    signIn: "/signin",
-    error: "/signin",
+    signIn: "/auth",
+    error: "/auth",
   },
   providers: [
     Credentials({

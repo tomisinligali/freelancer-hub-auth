@@ -3,7 +3,8 @@
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db/prisma";
-import { validateSignupInput } from "@/lib/validation/auth";
+import { splitFullName, validateSignupInput } from "@/lib/validation/auth";
+import { enqueueVerificationEmail } from "@/lib/background/email-jobs";
 
 export interface ActionResponse {
   success: boolean;
@@ -18,7 +19,7 @@ export async function signupAction(formData: FormData): Promise<ActionResponse> 
     return { success: false, error: validation.error || "Invalid input." };
   }
 
-  const { email, password } = validation.data;
+  const { fullName, email, password } = validation.data;
 
   try {
     const existing = await prisma.user.findUnique({
@@ -36,31 +37,40 @@ export async function signupAction(formData: FormData): Promise<ActionResponse> 
     // Security Rule 3 & Skill: Hash with bcrypt cost 12
     const passwordHash = await bcrypt.hash(password, 12);
 
+    const nameParts = splitFullName(fullName);
+
     const user = await prisma.user.create({
       data: {
         email,
+        fullName: nameParts.fullName,
+        firstName: nameParts.firstName,
+        middleName: nameParts.middleName,
+        lastName: nameParts.lastName,
         passwordHash,
         emailVerified: null,
       },
     });
 
-    // Create email verification token
-    const token = crypto.randomBytes(32).toString("hex");
+    // Create email verification code (crypto.randomBytes(32) -> 64-char hex)
+    const verificationCode = crypto.randomBytes(32).toString("hex");
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
     await prisma.verificationToken.create({
       data: {
         identifier: user.email,
-        token,
+        token: verificationCode,
         type: "email_verification",
         expiresAt,
       },
     });
 
+    // Background job: email the one-time verification code to the user
+    enqueueVerificationEmail(user.email, verificationCode);
+
     return {
       success: true,
-      message: "Account created successfully. Please verify your email to log in.",
-      verificationToken: token,
+      message: "Account created successfully. Enter the verification code sent to your email.",
+      verificationToken: verificationCode,
     };
   } catch (err: unknown) {
     console.error("Signup error:", err);

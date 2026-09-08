@@ -7,14 +7,10 @@ export default function AuthLayout({
 }) {
   return (
     <main className="fh-auth-container">
-      <div className="fh-auth-card">
-        <header className="fh-auth-header">
-          <div className="fh-auth-logo">
-            <span className="fh-auth-logo-text">Freelancer Hub</span>
-          </div>
-        </header>
-        {children}
+      <div className="fh-auth-logo">
+        <span className="fh-auth-logo-text">Freelancer Hub</span>
       </div>
+      <div className="fh-auth-card">{children}</div>
     </main>
   );
 }

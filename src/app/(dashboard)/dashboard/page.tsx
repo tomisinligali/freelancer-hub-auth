@@ -1,6 +1,7 @@
 import React from "react";
 import { auth } from "@/lib/auth/auth";
 import { SignOutButton } from "@/components/dashboard/SignOutButton";
+import { DeactivateAccountModal } from "@/components/dashboard/DeactivateAccountModal";
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -18,6 +19,7 @@ export default async function DashboardPage() {
 
         <div className="fh-dashboard-actions">
           <SignOutButton />
+          <DeactivateAccountModal />
         </div>
       </div>
     </div>

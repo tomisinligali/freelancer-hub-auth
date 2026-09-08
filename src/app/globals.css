@@ -45,11 +45,17 @@ input, button, textarea, select {
 /* ─── Auth Layout & Container ─── */
 .fh-auth-container {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   min-height: 100dvh;
   padding: var(--spacing-large-spacing) var(--spacing-base-spacing);
   background: var(--color-surface);
+}
+
+.fh-auth-logo {
+  text-align: center;
+  margin-bottom: var(--spacing-large-spacing);
 }
 
 .fh-auth-card {
@@ -59,12 +65,7 @@ input, button, textarea, select {
   border: 1px solid var(--color-neutral-variant-container);
   border-radius: 16px;
   padding: var(--spacing-extra-large-spacing);
-  box-shadow: var(--effect-soft-shadow);
-}
-
-.fh-auth-header {
-  text-align: center;
-  margin-bottom: var(--spacing-large-spacing);
+  box-shadow: 1px 1px 10px 0px rgba(0, 0, 0, 0.06);
 }
 
 .fh-auth-logo-text {
@@ -139,6 +140,17 @@ input, button, textarea, select {
   box-shadow: 0 0 0 3px var(--color-error-container);
 }
 
+.fh-input--valid {
+  background: var(--primitive-primary-98);
+}
+
+.fh-input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px var(--primitive-primary-98) inset;
+  -webkit-text-fill-color: var(--color-on-surface);
+  caret-color: var(--color-on-surface);
+  transition: background-color 9999s ease-out 0s;
+}
+
 .fh-input-error-text {
   font: var(--typography-body-small);
   color: var(--color-error);
@@ -149,6 +161,63 @@ input, button, textarea, select {
   font: var(--typography-body-small);
   color: var(--color-on-surface-varaint);
   margin-top: 2px;
+}
+
+.fh-password-reqs {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-extra-extra-samll-spacing);
+}
+
+.fh-password-req {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-extra-extra-samll-spacing);
+  font: var(--typography-body-small);
+  color: var(--color-on-surface-varaint);
+  line-height: 1.3;
+}
+
+.fh-password-req-marker {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.fh-input-wrap {
+  position: relative;
+}
+
+.fh-input-wrap--password .fh-input {
+  padding-right: 2.75rem;
+}
+
+.fh-input-toggle {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--color-on-surface-varaint);
+  transition: color 0.15s ease;
+}
+
+.fh-input-toggle:hover {
+  color: var(--color-on-surface);
 }
 
 .fh-password-field-wrapper {
@@ -185,8 +254,12 @@ input, button, textarea, select {
 }
 
 .fh-button:disabled {
-  opacity: 0.6;
+  background: var(--primitive-primary-90);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: none;
   cursor: not-allowed;
+  opacity: 1;
 }
 
 .fh-button--primary {
@@ -195,7 +268,7 @@ input, button, textarea, select {
 }
 
 .fh-button--primary:hover:not(:disabled) {
-  box-shadow: var(--effect-medium-shadow);
+  box-shadow: var(--effect-soft-shadow);
 }
 
 .fh-button--secondary {
@@ -206,6 +279,7 @@ input, button, textarea, select {
 
 .fh-button--secondary:hover:not(:disabled) {
   background: var(--color-surface-container-high);
+  box-shadow: var(--effect-soft-shadow);
 }
 
 .fh-button--ghost {
@@ -215,6 +289,7 @@ input, button, textarea, select {
 
 .fh-button--ghost:hover:not(:disabled) {
   background: var(--color-primary-container);
+  box-shadow: var(--effect-soft-shadow);
 }
 
 .fh-auth-submit {
@@ -305,6 +380,15 @@ input, button, textarea, select {
   color: var(--color-primary);
 }
 
+button.fh-auth-link,
+button.fh-auth-link--small {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+
 .fh-auth-link--small {
   font: var(--typography-body-small);
 }
@@ -393,5 +477,88 @@ input, button, textarea, select {
 
 .fh-dashboard-actions {
   display: flex;
+  align-items: center;
   gap: var(--spacing-base-spacing);
 }
+
+/* ─── Danger Button Outline ─── */
+.fh-btn-danger-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-medium-spacing) var(--spacing-large-spacing);
+  font: var(--typography-label-large);
+  font-weight: 600;
+  border: 1px solid var(--color-error);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-error);
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+.fh-btn-danger-outline:hover:not(:disabled) {
+  background: var(--color-error-container);
+}
+
+.fh-button--danger {
+  background: var(--color-error) !important;
+  color: var(--color-on-error) !important;
+  border-color: transparent !important;
+}
+
+.fh-button--danger:hover:not(:disabled) {
+  background: var(--color-error) !important;
+  opacity: 0.9;
+}
+
+/* ─── Modal Styles ─── */
+.fh-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-base-spacing);
+  z-index: 1000;
+}
+
+.fh-modal-card {
+  width: 100%;
+  max-width: 480px;
+  background: var(--color-surface-container-lowest);
+  border: 1px solid var(--color-neutral-variant-container);
+  border-radius: 12px;
+  padding: var(--spacing-extra-large-spacing);
+  box-shadow: var(--effect-hard-shadow);
+}
+
+.fh-modal-title {
+  font: var(--typography-headline-small);
+  font-family: var(--font-lora, "Lora"), serif;
+  color: var(--color-error);
+  margin-bottom: var(--spacing-small-large-spacing);
+}
+
+.fh-modal-description {
+  font: var(--typography-body-medium);
+  color: var(--color-on-surface);
+  line-height: 1.5;
+  margin-bottom: var(--spacing-base-spacing);
+}
+
+.fh-modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-base-spacing);
+}
+
+.fh-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-medium-spacing);
+  margin-top: var(--spacing-extra-small-spacing);
+}
+

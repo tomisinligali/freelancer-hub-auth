@@ -3,7 +3,7 @@
 import crypto from "crypto";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/db/prisma";
-import { validateEmail } from "@/lib/validation/auth";
+import { validateForgotPasswordInput } from "@/lib/validation/auth";
 import { checkRateLimit, RATE_LIMITS } from "@/lib/security/rate-limit";
 
 export interface ForgotPasswordResponse {
@@ -29,13 +29,12 @@ export async function forgotPasswordAction(formData: FormData): Promise<ForgotPa
     };
   }
 
-  const emailRaw = formData.get("email");
-  const validation = validateEmail(emailRaw);
+  const validation = validateForgotPasswordInput(formData);
   if (!validation.success || !validation.data) {
     return { success: false, error: validation.error || "Valid email is required." };
   }
 
-  const email = validation.data;
+  const email = validation.data.email;
 
   try {
     const user = await prisma.user.findUnique({

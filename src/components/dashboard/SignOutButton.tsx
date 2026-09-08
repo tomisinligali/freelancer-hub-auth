@@ -9,7 +9,7 @@ export function SignOutButton() {
 
   const handleSignOut = () => {
     startTransition(async () => {
-      await signOut({ callbackUrl: "/signin" });
+      await signOut({ callbackUrl: "/auth" });
     });
   };
 
