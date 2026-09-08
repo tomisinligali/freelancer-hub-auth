@@ -1,0 +1,119 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProjectStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  DONE
+  ARCHIVED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String?   // null if OAuth-only account
+  emailVerified DateTime?
+  oauthProvider String?   // e.g. "google"
+  oauthId       String?
+  deactivatedAt DateTime? // grace period start
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  clients  Client[]
+  projects Project[]
+
+  @@index([email])
+}
+
+model Client {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  email      String?
+  notes      String?
+  archivedAt DateTime? // soft delete marker
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  projects Project[]
+
+  @@index([userId])
+  @@index([userId, archivedAt])
+}
+
+model Project {
+  id          String        @id @default(cuid())
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId    String?
+  client      Client?       @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  title       String
+  description String?
+  status      ProjectStatus @default(NOT_STARTED)
+  startDate   DateTime?
+  dueDate     DateTime?
+  completedAt DateTime?     // set when status transitions to DONE; cleared if status reverts
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  timeEntries TimeEntry[]
+  payments    Payment[]
+
+  @@index([userId])
+  @@index([userId, status])
+  @@index([clientId])
+}
+
+model TimeEntry {
+  id         String   @id @default(cuid())
+  userId     String   // denormalized for direct isolation filtering
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  date       DateTime
+  minutes    Int      // positive integer, max 1440
+  note       String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([userId])
+}
+
+model Payment {
+  id        String        @id @default(cuid())
+  userId    String        // denormalized for direct isolation filtering
+  projectId String
+  project   Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  amount    Decimal       @db.Decimal(12, 2)
+  status    PaymentStatus @default(PENDING)
+  dueDate   DateTime      // replaces overloaded date; set on creation
+  paidDate  DateTime?     // set automatically when status -> PAID; cleared if reverted
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([projectId])
+  @@index([userId])
+}
+
+model VerificationToken {
+  id         String   @id @default(cuid())
+  identifier String   // email address
+  token      String   @unique
+  type       String   // "email_verification" or "password_reset"
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([identifier, type])
+}

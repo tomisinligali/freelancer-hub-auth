@@ -1,0 +1,397 @@
+@import "../../design-tokens.css";
+
+/* ─── CSS Reset & Base ─── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font: var(--typography-body-large);
+  font-family: var(--font-dm-sans, "DM Sans"), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--color-on-surface);
+  background: var(--color-surface);
+  min-height: 100dvh;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  text-wrap: balance;
+}
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+input, button, textarea, select {
+  font: inherit;
+  color: inherit;
+}
+
+/* ─── Auth Layout & Container ─── */
+.fh-auth-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: var(--spacing-large-spacing) var(--spacing-base-spacing);
+  background: var(--color-surface);
+}
+
+.fh-auth-card {
+  width: 100%;
+  max-width: 440px;
+  background: var(--color-surface-container-lowest);
+  border: 1px solid var(--color-neutral-variant-container);
+  border-radius: 16px;
+  padding: var(--spacing-extra-large-spacing);
+  box-shadow: var(--effect-soft-shadow);
+}
+
+.fh-auth-header {
+  text-align: center;
+  margin-bottom: var(--spacing-large-spacing);
+}
+
+.fh-auth-logo-text {
+  font: var(--typography-headline-small);
+  font-family: var(--font-lora, "Lora"), serif;
+  font-weight: 600;
+  color: var(--color-primary);
+  letter-spacing: -0.5px;
+}
+
+.fh-auth-title-group {
+  margin-bottom: var(--spacing-large-spacing);
+  text-align: center;
+}
+
+.fh-auth-title {
+  font: var(--typography-headline-medium);
+  font-family: var(--font-lora, "Lora"), serif;
+  color: var(--color-on-surface);
+  margin-bottom: var(--spacing-extra-small-spacing);
+}
+
+.fh-auth-subtitle {
+  font: var(--typography-body-medium);
+  color: var(--color-on-surface-varaint);
+  line-height: 1.5;
+}
+
+/* ─── Forms ─── */
+.fh-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-base-spacing);
+}
+
+.fh-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-extra-extra-samll-spacing);
+}
+
+.fh-input-label {
+  font: var(--typography-label-large);
+  color: var(--color-on-surface);
+  font-weight: 500;
+}
+
+.fh-input {
+  display: block;
+  width: 100%;
+  padding: var(--spacing-medium-spacing) var(--spacing-base-spacing);
+  font: var(--typography-body-large);
+  color: var(--color-on-surface);
+  background: var(--color-surface-container);
+  border: 1px solid var(--color-neutral-variant-container);
+  border-radius: 8px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.fh-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-container);
+}
+
+.fh-input--error {
+  border-color: var(--color-error);
+}
+
+.fh-input--error:focus {
+  border-color: var(--color-error);
+  box-shadow: 0 0 0 3px var(--color-error-container);
+}
+
+.fh-input-error-text {
+  font: var(--typography-body-small);
+  color: var(--color-error);
+  margin-top: 2px;
+}
+
+.fh-input-helper-text {
+  font: var(--typography-body-small);
+  color: var(--color-on-surface-varaint);
+  margin-top: 2px;
+}
+
+.fh-password-field-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-extra-extra-samll-spacing);
+}
+
+.fh-forgot-password-link-wrapper {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+/* ─── Buttons ─── */
+.fh-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-extra-small-spacing);
+  padding: var(--spacing-medium-spacing) var(--spacing-large-spacing);
+  font: var(--typography-label-large);
+  font-weight: 600;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.fh-button:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.fh-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.fh-button--primary {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.fh-button--primary:hover:not(:disabled) {
+  box-shadow: var(--effect-medium-shadow);
+}
+
+.fh-button--secondary {
+  background: var(--color-surface-container);
+  color: var(--color-on-surface);
+  border-color: var(--color-neutral-variant-container);
+}
+
+.fh-button--secondary:hover:not(:disabled) {
+  background: var(--color-surface-container-high);
+}
+
+.fh-button--ghost {
+  background: transparent;
+  color: var(--color-primary);
+}
+
+.fh-button--ghost:hover:not(:disabled) {
+  background: var(--color-primary-container);
+}
+
+.fh-auth-submit {
+  width: 100%;
+  margin-top: var(--spacing-extra-small-spacing);
+}
+
+.fh-button-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: fh-spin 0.6s linear infinite;
+}
+
+@keyframes fh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ─── Messages & Alerts ─── */
+.fh-message {
+  padding: var(--spacing-medium-spacing) var(--spacing-base-spacing);
+  border-radius: 8px;
+  font: var(--typography-body-small);
+  margin-bottom: var(--spacing-base-spacing);
+  display: flex;
+  align-items: center;
+  line-height: 1.4;
+}
+
+.fh-message--error {
+  background: var(--color-error-container);
+  color: var(--color-on-error-container);
+  border: 1px solid var(--color-error);
+}
+
+.fh-message--success {
+  background: var(--color-success-container);
+  color: var(--color-on-success-container);
+  border: 1px solid var(--color-success);
+}
+
+.fh-message--info {
+  background: var(--color-info-container);
+  color: var(--color-on-info-container);
+  border: 1px solid var(--color-info);
+}
+
+/* ─── Dev Helper Box ─── */
+.fh-dev-box {
+  background: var(--color-surface-container);
+  border: 1px dashed var(--color-primary);
+  border-radius: 8px;
+  padding: var(--spacing-medium-spacing);
+  margin-bottom: var(--spacing-base-spacing);
+}
+
+.fh-dev-box-title {
+  font: var(--typography-label-medium);
+  font-weight: 600;
+  color: var(--color-primary);
+  margin-bottom: var(--spacing-extra-extra-samll-spacing);
+}
+
+.fh-dev-box-link {
+  font: var(--typography-body-small);
+  color: var(--color-primary);
+  word-break: break-all;
+  text-decoration: underline;
+}
+
+/* ─── Auth Footer ─── */
+.fh-auth-footer {
+  margin-top: var(--spacing-large-spacing);
+  text-align: center;
+}
+
+.fh-auth-footer-text {
+  font: var(--typography-body-medium);
+  color: var(--color-on-surface-varaint);
+}
+
+.fh-auth-link {
+  font-weight: 500;
+  color: var(--color-primary);
+}
+
+.fh-auth-link--small {
+  font: var(--typography-body-small);
+}
+
+/* ─── Dashboard Shell ─── */
+.fh-dashboard-shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+}
+
+.fh-dashboard-header {
+  background: var(--color-surface-container-lowest);
+  border-bottom: 1px solid var(--color-neutral-variant-container);
+  padding: var(--spacing-medium-spacing) var(--spacing-large-spacing);
+}
+
+.fh-dashboard-header-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.fh-dashboard-logo {
+  font: var(--typography-title-large);
+  font-family: var(--font-lora, "Lora"), serif;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.fh-dashboard-user-info {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-base-spacing);
+}
+
+.fh-dashboard-user-email {
+  font: var(--typography-body-medium);
+  color: var(--color-on-surface);
+  font-weight: 500;
+}
+
+.fh-dashboard-main {
+  flex: 1;
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+  padding: var(--spacing-extra-large-spacing) var(--spacing-large-spacing);
+}
+
+.fh-dashboard-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-large-spacing);
+}
+
+.fh-dashboard-welcome-card {
+  background: var(--color-surface-container-lowest);
+  border: 1px solid var(--color-neutral-variant-container);
+  border-radius: 12px;
+  padding: var(--spacing-extra-large-spacing);
+  box-shadow: var(--effect-soft-shadow);
+}
+
+.fh-dashboard-title {
+  font: var(--typography-headline-medium);
+  font-family: var(--font-lora, "Lora"), serif;
+  color: var(--color-on-surface);
+  margin-bottom: var(--spacing-extra-small-spacing);
+}
+
+.fh-dashboard-greeting {
+  font: var(--typography-body-large);
+  color: var(--color-on-surface);
+  margin-bottom: var(--spacing-extra-small-spacing);
+}
+
+.fh-dashboard-subtitle {
+  font: var(--typography-body-medium);
+  color: var(--color-on-surface-varaint);
+  margin-bottom: var(--spacing-large-spacing);
+}
+
+.fh-dashboard-actions {
+  display: flex;
+  gap: var(--spacing-base-spacing);
+}
