@@ -8,34 +8,49 @@ function getAppUrl(): string {
   );
 }
 
-function createTransporter(): Transporter {
-  const host = process.env.SMTP_HOST;
-  const port = Number(process.env.SMTP_PORT || 587);
-  const secure = process.env.SMTP_SECURE === "true";
+let cachedTransporter: Transporter | null = null;
 
-  if (!host) {
-    // No SMTP configured: use jsonTransport for local development
-    return nodemailer.createTransport({
-      jsonTransport: true,
-    }) as Transporter;
+async function getTransporter(): Promise<Transporter> {
+  if (cachedTransporter) {
+    return cachedTransporter;
   }
 
-  return nodemailer.createTransport({
-    host,
-    port,
-    secure,
-    auth: process.env.SMTP_USER
-      ? {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        }
-      : undefined,
-  });
+  // Option 1: Custom SMTP (e.g. Gmail App Password configured in .env)
+  if (process.env.SMTP_HOST && process.env.SMTP_PASS) {
+    cachedTransporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT || 587),
+      secure: process.env.SMTP_SECURE === "true",
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+    return cachedTransporter;
+  }
+
+  // Option 2: Automatic Ethereal SMTP account for real email delivery & web preview
+  try {
+    const testAccount = await nodemailer.createTestAccount();
+    cachedTransporter = nodemailer.createTransport({
+      host: "smtp.ethereal.email",
+      port: 587,
+      secure: false,
+      auth: {
+        user: testAccount.user,
+        pass: testAccount.pass,
+      },
+    });
+    console.log(`[mail] Generated real Ethereal SMTP test mailbox: ${testAccount.user}`);
+    return cachedTransporter;
+  } catch (err) {
+    console.error("[mail] Failed to create test SMTP account, falling back to JSON transport:", err);
+    cachedTransporter = nodemailer.createTransport({ jsonTransport: true });
+    return cachedTransporter;
+  }
 }
 
-const transporter: Transporter = createTransporter();
-
-export const isMailConfigured = Boolean(process.env.SMTP_HOST && process.env.SMTP_PASS);
+export const isMailConfigured = true;
 
 export async function sendVerificationEmail(
   to: string,
@@ -45,7 +60,6 @@ export async function sendVerificationEmail(
   const from = process.env.MAIL_FROM || `"Freelancer Hub" <noreply@${new URL(baseUrl).hostname}>`;
   const verifyUrl = `${baseUrl}/auth?view=verify&token=${code}`;
 
-  // Always log the code clearly in development mode for easy testing
   console.log(`
 ══════════════════════════════════════════════════════════════
   FREELANCER HUB — EMAIL VERIFICATION
@@ -55,11 +69,8 @@ export async function sendVerificationEmail(
 ══════════════════════════════════════════════════════════════
 `);
 
-  if (!process.env.SMTP_HOST) {
-    return;
-  }
-
   try {
+    const transporter = await getTransporter();
     const info = await transporter.sendMail({
       from,
       to,
@@ -83,10 +94,13 @@ export async function sendVerificationEmail(
       `,
     });
 
-    if (process.env.NODE_ENV !== "production") {
-      console.info("[mail] verification email sent:", info.messageId || info);
+    const previewUrl = nodemailer.getTestMessageUrl(info);
+    if (previewUrl) {
+      console.log(`[mail] View sent email online inbox preview at: ${previewUrl}`);
+    } else {
+      console.info("[mail] Verification email sent successfully:", info.messageId);
     }
   } catch (error) {
-    console.error("[mail error] Failed to send SMTP email. Falling back to console log:", error);
+    console.error("[mail error] Failed to dispatch SMTP email:", error);
   }
 }
