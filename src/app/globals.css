@@ -1436,3 +1436,190 @@ button.fh-auth-link--small {
 }
 
 
+/* ─── Dashboard Overview Styles ─── */
+.fh-dashboard-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--spacing-base-spacing);
+  margin-bottom: var(--spacing-large-spacing);
+}
+
+.fh-metric-card {
+  background: var(--color-surface-container-lowest);
+  border: 1px solid var(--color-neutral-variant-container);
+  border-radius: 12px;
+  padding: var(--spacing-large-spacing);
+  box-shadow: var(--effect-soft-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-extra-small-spacing);
+}
+
+.fh-metric-card-label {
+  font: var(--typography-label-medium);
+  color: var(--color-on-surface-varaint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.fh-metric-card-value {
+  font: var(--typography-headline-medium);
+  font-family: var(--font-lora, "Lora"), serif;
+  color: var(--color-on-surface);
+  line-height: 1.1;
+}
+
+.fh-metric-card-sub {
+  font: var(--typography-body-small);
+  color: var(--color-on-surface-varaint);
+}
+
+.fh-metric-card--highlight {
+  border-color: var(--color-primary);
+  background: var(--color-surface-container-low);
+}
+
+.fh-dashboard-sections-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-large-spacing);
+}
+
+@media (max-width: 900px) {
+  .fh-dashboard-sections-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fh-dashboard-section-card {
+  background: var(--color-surface-container-lowest);
+  border: 1px solid var(--color-neutral-variant-container);
+  border-radius: 12px;
+  padding: var(--spacing-large-spacing);
+  box-shadow: var(--effect-soft-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-base-spacing);
+}
+
+.fh-dashboard-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--color-neutral-variant-container);
+  padding-bottom: var(--spacing-small-large-spacing);
+}
+
+.fh-dashboard-section-title {
+  font: var(--typography-title-medium);
+  font-family: var(--font-lora, "Lora"), serif;
+  color: var(--color-on-surface);
+}
+
+.fh-dashboard-section-link {
+  font: var(--typography-label-medium);
+  color: var(--color-primary);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.fh-dashboard-section-link:hover {
+  text-decoration: underline;
+}
+
+.fh-dashboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-small-large-spacing);
+}
+
+.fh-dashboard-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-medium-spacing);
+  background: var(--color-surface-container-lowest);
+  border: 1px solid var(--color-neutral-variant-container);
+  border-radius: 8px;
+  text-decoration: none;
+  color: inherit;
+  transition: all 0.15s ease;
+}
+
+.fh-dashboard-item:hover {
+  background: var(--color-surface-container-low);
+  border-color: var(--color-primary);
+  text-decoration: none;
+}
+
+.fh-dashboard-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fh-dashboard-item-title {
+  font: var(--typography-title-small);
+  color: var(--color-on-surface);
+  font-weight: 600;
+}
+
+.fh-dashboard-item-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-small-large-spacing);
+  font: var(--typography-body-small);
+  color: var(--color-on-surface-varaint);
+}
+
+.fh-dashboard-item-right {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-small-large-spacing);
+}
+
+/* ─── Onboarding Empty State (DASH-02) ─── */
+.fh-onboarding-card {
+  background: var(--color-surface-container-lowest);
+  border: 1px dashed var(--color-primary);
+  border-radius: 16px;
+  padding: 48px var(--spacing-extra-large-spacing);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-base-spacing);
+  box-shadow: var(--effect-soft-shadow);
+  margin-top: var(--spacing-large-spacing);
+}
+
+.fh-onboarding-title {
+  font: var(--typography-headline-medium);
+  font-family: var(--font-lora, "Lora"), serif;
+  color: var(--color-on-surface);
+}
+
+.fh-onboarding-desc {
+  font: var(--typography-body-large);
+  color: var(--color-on-surface-varaint);
+  max-width: 480px;
+  line-height: 1.5;
+}
+
+.fh-dashboard-account-section {
+  margin-top: var(--spacing-extra-large-spacing);
+  padding-top: var(--spacing-large-spacing);
+  border-top: 1px solid var(--color-neutral-variant-container);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--spacing-base-spacing);
+}
+
+.fh-dashboard-account-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}

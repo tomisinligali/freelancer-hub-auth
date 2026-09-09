@@ -10,7 +10,8 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
-    "db:push": "prisma db push"
+    "db:push": "prisma db push",
+    "test:isolation": "tsx scripts/test-isolation.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",
