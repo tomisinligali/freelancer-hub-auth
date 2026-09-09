@@ -58,16 +58,7 @@ export async function sendVerificationEmail(
 ): Promise<void> {
   const baseUrl = getAppUrl();
   const from = process.env.MAIL_FROM || `"Freelancer Hub" <noreply@${new URL(baseUrl).hostname}>`;
-  const verifyUrl = `${baseUrl}/auth?view=verify&token=${code}`;
-
-  console.log(`
-══════════════════════════════════════════════════════════════
-  FREELANCER HUB — EMAIL VERIFICATION
-  Recipient : ${to}
-  Code/Token: ${code}
-  Direct Link: ${verifyUrl}
-══════════════════════════════════════════════════════════════
-`);
+  const verifyUrl = `${baseUrl}/auth?view=verify`;
 
   try {
     const transporter = await getTransporter();
@@ -84,8 +75,7 @@ export async function sendVerificationEmail(
             <strong>${code}</strong>
           </p>
           <p>
-            Enter this code in the verification form or click the link below:
-            <br />
+            Enter this code in the verification form at
             <a href="${verifyUrl}">${verifyUrl}</a>
           </p>
           <p style="font-size: 13px; color: #555;">This code expires in 24 hours and can only be used once.</p>

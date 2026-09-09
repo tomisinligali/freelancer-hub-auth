@@ -375,6 +375,15 @@ input, button, textarea, select {
   color: var(--color-on-surface-varaint);
 }
 
+.fh-resend-row {
+  margin-top: var(--spacing-small-spacing);
+}
+
+.fh-resend-row button:disabled {
+  color: var(--color-on-surface-varaint);
+  cursor: not-allowed;
+}
+
 .fh-auth-link {
   font-weight: 500;
   color: var(--color-primary);

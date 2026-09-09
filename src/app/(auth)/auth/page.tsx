@@ -14,12 +14,32 @@ import { signupAction } from "@/server/actions/auth/signup";
 import { forgotPasswordAction } from "@/server/actions/auth/forgot-password";
 import { resetPasswordAction } from "@/server/actions/auth/reset-password";
 import { verifyEmailAction } from "@/server/actions/auth/verify-email";
+import { resendVerificationEmailAction } from "@/server/actions/auth/resend-verification";
 import { clientValidation } from "@/lib/validation/auth";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { FormMessage } from "@/components/ui/FormMessage";
 
 type AuthView = "signin" | "signup" | "forgot" | "reset" | "verify";
+
+const IDEMPOTENCY_STORAGE_KEY = "fh:signup:idempotencyKey";
+
+function getOrCreateIdempotencyKey(): string {
+  if (typeof window === "undefined") return crypto.randomUUID();
+  const existing = window.sessionStorage.getItem(IDEMPOTENCY_STORAGE_KEY);
+  if (existing) return existing;
+  const key = crypto.randomUUID();
+  window.sessionStorage.setItem(IDEMPOTENCY_STORAGE_KEY, key);
+  return key;
+}
+
+function clearIdempotencyKey() {
+  try {
+    window.sessionStorage.removeItem(IDEMPOTENCY_STORAGE_KEY);
+  } catch {
+    // storage unavailable — key will simply rotate on next render
+  }
+}
 
 const VIEW_CONFIG: Record<
   AuthView,
@@ -58,11 +78,34 @@ const ERROR_MESSAGES: Record<string, string> = {
   CredentialsSignin: "Invalid email or password.",
   Configuration: "Authentication is not configured correctly.",
   Default: "An error occurred while trying to sign in.",
+  MissingCSRF: "Session expired. Please try again.",
+  Verification: "The verification link is invalid or has expired.",
+  AccessDenied: "You don't have access to sign in with this account.",
+};
+
+const CODE_MESSAGES: Record<string, string> = {
+  invalid_credentials: "Invalid email or password.",
+  unverified_email: "Please verify your email address before signing in.",
+  account_deactivated: "This account is currently deactivated.",
 };
 
 function parseError(raw: string | null): string | null {
   if (!raw) return null;
   return ERROR_MESSAGES[raw] || ERROR_MESSAGES.Default;
+}
+
+function parseSignInError(error?: string, code?: string): string {
+  if (code?.startsWith("Locked-")) {
+    const mins = Number(code.split("-")[1]);
+    if (Number.isFinite(mins) && mins > 0) {
+      return `Too many failed login attempts. Please try again in ${mins} minute${mins === 1 ? "" : "s"}.`;
+    }
+    return "Too many failed login attempts. Please try again later.";
+  }
+  if (code && CODE_MESSAGES[code]) {
+    return CODE_MESSAGES[code];
+  }
+  return ERROR_MESSAGES[error ?? ""] || ERROR_MESSAGES.Default;
 }
 
 function parseView(raw: string | null): AuthView {
@@ -198,7 +241,7 @@ function SignInForm({
         });
 
         if (result?.error) {
-          setError(result.error);
+          setError(parseSignInError(result.error, result.code));
         } else {
           router.push(callbackUrl);
           router.refresh();
@@ -233,7 +276,7 @@ function SignInForm({
             type="password"
             required
             autoComplete="current-password"
-            placeholder="Your password"
+            placeholder="••••••••"
             error={fieldErrors.password}
 onBlur={handleFieldBlur("password")}
           onChange={handleFieldChange("password")}
@@ -268,7 +311,7 @@ function SignupForm({
   onVerificationCreated,
 }: {
   onSwitchView: (view: AuthView) => void;
-  onVerificationCreated: (code: string) => void;
+  onVerificationCreated: (email: string) => void;
 }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -368,6 +411,7 @@ function SignupForm({
     trimmedFormData.set("fullName", values.fullName.trim());
     trimmedFormData.set("email", values.email.trim());
     trimmedFormData.set("password", values.password);
+    trimmedFormData.set("idempotencyKey", getOrCreateIdempotencyKey());
 
     startTransition(async () => {
       const res = await signupAction(trimmedFormData);
@@ -375,12 +419,11 @@ function SignupForm({
         setError(res.error || "Failed to create account.");
       } else {
         setSuccessMessage(res.message || "Account created! Please verify your email.");
+        clearIdempotencyKey();
         setValues({ fullName: "", email: "", password: "" });
         setFieldErrors({});
         setValidated({});
-        if (res.verificationToken) {
-          onVerificationCreated(res.verificationToken);
-        }
+        onVerificationCreated(values.email);
       }
     });
   };
@@ -424,7 +467,7 @@ function SignupForm({
             type="password"
             required
             autoComplete="new-password"
-            placeholder="At least 8 characters"
+            placeholder="••••••••"
             hint={<PasswordRequirements password={values.password} />}
             error={fieldErrors.password}
             valid={validated.password}
@@ -626,7 +669,7 @@ function ResetPasswordForm({
             type="password"
             required
             autoComplete="new-password"
-            placeholder="At least 8 characters"
+            placeholder="••••••••"
             helperText={!fieldErrors.password ? "8-64 characters with uppercase, lowercase, a number, and #@>^" : undefined}
             error={fieldErrors.password}
             onBlur={handleFieldBlur("password", "New password")}
@@ -639,7 +682,7 @@ function ResetPasswordForm({
             type="password"
             required
             autoComplete="new-password"
-            placeholder="Re-enter password"
+            placeholder="••••••••"
             error={fieldErrors.confirmPassword}
             onBlur={handleFieldBlur("confirmPassword", "Confirm new password")}
             onChange={handleConfirmPasswordChange}
@@ -661,10 +704,10 @@ function ResetPasswordForm({
 }
 
 function VerifyEmailForm({
-  code,
+  email,
   onSwitchView,
 }: {
-  code: string;
+  email: string;
   onSwitchView: (view: AuthView) => void;
 }) {
   const [isPending, startTransition] = useTransition();
@@ -672,6 +715,41 @@ function VerifyEmailForm({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [codeValue, setCodeValue] = useState("");
+  const [resendMessage, setResendMessage] = useState<string | null>(null);
+  const [isResending, setIsResending] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setInterval(() => {
+      setCooldown(prev => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldown]);
+
+  const handleResend = () => {
+    if (isResending || cooldown > 0 || !email) return;
+    setIsResending(true);
+    setResendMessage(null);
+    setError(null);
+
+    startTransition(async () => {
+      const res = await resendVerificationEmailAction(email);
+      setIsResending(false);
+      if (!res.success) {
+        setError(res.error || "Failed to resend the code.");
+      } else {
+        setResendMessage(res.message || "A new code has been sent.");
+        setCooldown(60);
+      }
+    });
+  };
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -702,13 +780,6 @@ function VerifyEmailForm({
         activate your account.
       </p>
 
-      {code ? (
-        <div className="fh-dev-box">
-          <p className="fh-dev-box-title">Development — your verification code:</p>
-          <code className="fh-dev-box-link">{code}</code>
-        </div>
-      ) : null}
-
       <FormMessage type="error" message={error} />
       <FormMessage type="success" message={successMessage} />
 
@@ -728,7 +799,27 @@ function VerifyEmailForm({
           <Button type="submit" disabled={!codeValue.trim()} isLoading={isPending} className="fh-auth-submit">
             Verify email
           </Button>
+
+          <p className="fh-auth-footer-text fh-resend-row">
+            Didn&apos;t receive the code?{" "}
+            <button
+              type="button"
+              className="fh-auth-link"
+              onClick={handleResend}
+              disabled={isResending || cooldown > 0}
+            >
+              {isResending
+                ? "Resending…"
+                : cooldown > 0
+                  ? `Resend code in ${cooldown}s`
+                  : "Resend code"}
+            </button>
+          </p>
         </form>
+      ) : null}
+
+      {resendMessage ? (
+        <FormMessage type="success" message={resendMessage} />
       ) : null}
 
       <AuthFooter
@@ -742,22 +833,31 @@ function VerifyEmailForm({
 
 function AuthPageContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [view, setView] = useState<AuthView>(() =>
     parseView(searchParams.get("view"))
   );
-  const [verificationCode, setVerificationCode] = useState("");
   const token = searchParams.get("token") || "";
+  const [pendingVerifyEmail, setPendingVerifyEmail] = useState("");
 
   useEffect(() => {
     document.title = `${VIEW_CONFIG[view].documentTitle} | Freelancer Hub`;
   }, [view]);
 
+  const isVerifyWithStaleToken = view === "verify" && Boolean(searchParams.get("token"));
+
+  useEffect(() => {
+    if (isVerifyWithStaleToken) {
+      router.replace("/auth?view=verify");
+    }
+  }, [isVerifyWithStaleToken, router]);
+
   const navigate = useCallback((nextView: AuthView) => {
     setView(nextView);
   }, []);
 
-  const handleVerificationCreated = useCallback((code: string) => {
-    setVerificationCode(code);
+  const handleVerificationCreated = useCallback((email: string) => {
+    setPendingVerifyEmail(email);
     setView("verify");
   }, []);
 
@@ -790,7 +890,7 @@ function AuthPageContent() {
       ) : null}
 
       {view === "verify" ? (
-        <VerifyEmailForm code={verificationCode} onSwitchView={navigate} />
+        <VerifyEmailForm email={pendingVerifyEmail} onSwitchView={navigate} />
       ) : null}
     </div>
   );

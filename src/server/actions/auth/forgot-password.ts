@@ -4,7 +4,13 @@ import crypto from "crypto";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/db/prisma";
 import { validateForgotPasswordInput } from "@/lib/validation/auth";
-import { checkRateLimit, RATE_LIMITS } from "@/lib/security/rate-limit";
+import {
+  getClientIp,
+  isLoginLocked,
+  recordLoginFailure,
+  clearLoginFailures,
+  lockedMessage,
+} from "@/lib/auth/rate-limit";
 
 export interface ForgotPasswordResponse {
   success: boolean;
@@ -15,26 +21,21 @@ export interface ForgotPasswordResponse {
 
 export async function forgotPasswordAction(formData: FormData): Promise<ForgotPasswordResponse> {
   const headerList = await headers();
-  const ip =
-    headerList.get("x-forwarded-for")?.split(",")[0].trim() ||
-    headerList.get("x-real-ip") ||
-    "127.0.0.1";
-
-  // Rate limit: 5 attempts per 15 min per IP (Security Rule 22)
-  const rateLimit = checkRateLimit(`pwd_reset:${ip}`, RATE_LIMITS.PASSWORD_RESET);
-  if (!rateLimit.allowed) {
-    return {
-      success: false,
-      error: "Too many password reset attempts. Please try again in 15 minutes.",
-    };
-  }
+  const ip = getClientIp(headerList);
 
   const validation = validateForgotPasswordInput(formData);
-  if (!validation.success || !validation.data) {
+  const email = validation.success && validation.data ? validation.data.email : null;
+
+  if (!email) {
+    // Unparseable input counts as a failed attempt (keyed to ip by empty email)
+    await recordLoginFailure("", ip);
     return { success: false, error: validation.error || "Valid email is required." };
   }
 
-  const email = validation.data.email;
+  const lockedMinutes = await isLoginLocked(email, ip);
+  if (lockedMinutes > 0) {
+    return { success: false, error: lockedMessage(lockedMinutes) };
+  }
 
   try {
     const user = await prisma.user.findUnique({
@@ -42,7 +43,9 @@ export async function forgotPasswordAction(formData: FormData): Promise<ForgotPa
     });
 
     if (!user) {
-      // Don't leak user existence; return generic positive response
+      // Don't leak user existence; returning a generic positive response is still
+      // a "no email sent" outcome, so it has a cost (anti-enumeration).
+      await recordLoginFailure(email, ip);
       return {
         success: true,
         message: "If that email address is in our system, you will receive a password reset link shortly.",
@@ -70,6 +73,9 @@ export async function forgotPasswordAction(formData: FormData): Promise<ForgotPa
       },
     });
 
+    // A real reset email was (about to be) prepared — clear accumulated failures
+    await clearLoginFailures(email, ip);
+
     return {
       success: true,
       message: "If that email address is in our system, you will receive a password reset link shortly.",
@@ -77,6 +83,7 @@ export async function forgotPasswordAction(formData: FormData): Promise<ForgotPa
     };
   } catch (err: unknown) {
     console.error("Forgot password error:", err);
+    await recordLoginFailure(email, ip);
     return {
       success: false,
       error: "An unexpected error occurred. Please try again later.",

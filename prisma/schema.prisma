@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
+  engineType = "client"
 }
 
 datasource db {
@@ -120,4 +121,30 @@ model VerificationToken {
   createdAt  DateTime @default(now())
 
   @@index([identifier, type])
+}
+
+model AccountRequest {
+  id             String    @id @default(cuid())
+  idempotencyKey String    @unique
+  email          String
+  status         String    @default("PENDING") // PENDING | COMPLETED
+  createdAt      DateTime  @default(now())
+  completedAt    DateTime?
+
+  @@index([email])
+}
+
+model LoginAttempt {
+  id          String    @id @default(cuid())
+  email       String
+  ip          String
+  failures    Int       @default(0)
+  lockedUntil DateTime?
+  lastAttempt DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([email, ip])
+  @@index([email])
+  @@index([ip])
 }

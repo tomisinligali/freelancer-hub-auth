@@ -1,17 +1,54 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
+import { CredentialsSignin } from "@auth/core/errors";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db/prisma";
+import { authConfig } from "@/lib/auth/auth.config";
+import {
+  enforceLoginRateLimit,
+  getClientIp,
+  recordLoginFailure,
+  clearLoginFailures,
+} from "@/lib/auth/rate-limit";
+
+class InvalidCredentialsError extends CredentialsSignin {
+  code = "invalid_credentials";
+}
+
+class UnverifiedEmailError extends CredentialsSignin {
+  code = "unverified_email";
+}
+
+class DeactivatedAccountError extends CredentialsSignin {
+  code = "account_deactivated";
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  ...authConfig,
+  secret: process.env.NEXTAUTH_SECRET,
+  trustHost: true,
   session: {
     strategy: "jwt",
     maxAge: 30 * 24 * 60 * 60, // 30 days session per PRD & Security Rule 9
   },
-  pages: {
-    signIn: "/auth",
-    error: "/auth",
+  cookies: {
+    sessionToken: {
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+      },
+    },
+    csrfToken: {
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+      },
+    },
   },
   providers: [
     Credentials({
@@ -20,34 +57,43 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         if (!credentials?.email || !credentials?.password) {
-          throw new Error("Email and password are required.");
+          throw new InvalidCredentialsError();
         }
 
         const email = String(credentials.email).trim().toLowerCase();
         const password = String(credentials.password);
+        const ip = getClientIp(request);
+
+        // Security Rule: progressive lockout on repeated failed logins
+        await enforceLoginRateLimit(email, ip);
 
         const user = await prisma.user.findUnique({
           where: { email },
         });
 
         if (!user || !user.passwordHash) {
-          throw new Error("Invalid email or password.");
+          await recordLoginFailure(email, ip);
+          throw new InvalidCredentialsError();
         }
 
         if (user.deactivatedAt) {
-          throw new Error("This account is currently deactivated.");
+          throw new DeactivatedAccountError();
         }
 
         if (!user.emailVerified) {
-          throw new Error("Please verify your email address before signing in.");
+          throw new UnverifiedEmailError();
         }
 
         const isValid = await bcrypt.compare(password, user.passwordHash);
         if (!isValid) {
-          throw new Error("Invalid email or password.");
+          await recordLoginFailure(email, ip);
+          throw new InvalidCredentialsError();
         }
+
+        // Successful login — clear any accumulated failures for this email+ip
+        await clearLoginFailures(email, ip);
 
         return {
           id: user.id,
@@ -65,6 +111,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       : []),
   ],
   callbacks: {
+    ...authConfig.callbacks,
     async signIn({ user, account, profile }) {
       if (account?.provider === "google") {
         if (!profile?.email) {
@@ -110,18 +157,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }
       }
       return true;
-    },
-    async jwt({ token, user }) {
-      if (user) {
-        token.id = user.id;
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      if (session.user && token.id) {
-        session.user.id = token.id as string;
-      }
-      return session;
     },
   },
 });

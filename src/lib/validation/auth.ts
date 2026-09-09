@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const emailSchema = z
+export const emailSchema = z
   .string()
   .trim()
   .toLowerCase()
@@ -78,6 +78,15 @@ export const resetPasswordSchema = z.object({
   message: "Passwords do not match.",
   path: ["confirmPassword"],
 });
+
+export const idempotencyKeySchema = z
+  .string()
+  .trim()
+  .min(1, "Idempotency key is missing.")
+  .regex(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    "Idempotency key is malformed."
+  );
 
 export type SignupInput = z.infer<typeof signupSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
