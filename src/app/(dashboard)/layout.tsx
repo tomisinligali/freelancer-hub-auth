@@ -26,6 +26,9 @@ export default async function DashboardLayout({
               <Link href="/dashboard" className="fh-nav-link">
                 Dashboard
               </Link>
+              <Link href="/projects" className="fh-nav-link">
+                Projects
+              </Link>
               <Link href="/clients" className="fh-nav-link">
                 Clients
               </Link>
