@@ -2,9 +2,9 @@
 
 ## Section 1: What This Is
 
-This slice is the complete sign-in, sign-up, and account-security layer of the application — everything that happens before a user reaches the dashboard. A visitor can create an account with their full name, email, and password; prove they own the email by entering a six-digit code that arrives by mail; sign in with those credentials; reset a forgotten password through a link that works exactly once and expires within an hour; and optionally sign in with Google. Every entry point validates its input twice (once in the browser for instant feedback, once on the server as the source of truth), counteracts both attackers and accidents: failed authentication locks the offender out for escalating periods, a double-clicked or double-submitted sign-up cannot create two accounts, and the session that results is a signed cookie that scripts cannot read and that rotates its anti-forgery token before and after every login. Once signed in, users land on a guarded dashboard that cannot be reached without a valid session and that greets them minimally ("You Are Signed In — Welcome, name") before the rest of the application (clients, projects, and time-tracking) takes over.
+This slice is the complete sign-in, sign-up, and account-security layer of the application — everything that happens before a user reaches the dashboard. A visitor can create an account with their full name, email, and password; prove they own the email by entering a six-digit code that arrives by mail; sign in with those credentials; reset a forgotten password through a link that works exactly once and expires within an hour; and optionally sign in with Google. Every entry point validates its input twice (once in the browser for instant feedback, once on the server as the source of truth), counteracts both attackers and accidents: failed authentication locks the offender out for escalating periods, a double-clicked or double-submitted sign-up cannot create two accounts, and the session that results is a signed cookie that scripts cannot read and that rotates its anti-forgery token before and after every login. Once signed in, users land on a guarded dashboard that cannot be reached without a valid session and that greets them minimally ("You Are Signed In — Welcome, name") — the end of this slice. Everything beyond authentication lives in other slices.
 
-Deliberately not included: nothing about the paying work — no client records, no projects, no invoices, no time-tracking screens — those live in separate slices and are merely represented as empty relationships in the data model. Also not included: profile and account management beyond the essentials (no email change, avatar, or two-factor authentication yet), a production email infrastructure (mail is handed to a working SMTP sender and left unattended past that point — no retry queue or delivery analytics), and any deployment, monitoring, or billing concerns. The reason is scope discipline: this slice exists to make one thing reliably true — that the person using the app is exactly who the app thinks they are, and that a single honest mistake (a double submit, a slow capslock, a forgotten password) can never cost them the account. Everything else is deliberately the job of other slices so that this thin, high-stakes trust boundary stays small enough to reason about and verify end to end.
+Deliberately not included: nothing about the paying work — no client records, no projects, no invoices, no time-tracking screens; those live in separate slices (each in its own repository), and this repository's data model contains no tables for them at all. Also not included: profile and account management beyond the essentials (no email change, avatar, or two-factor authentication yet), a production email infrastructure (mail is handed to a working SMTP sender and left unattended past that point — no retry queue or delivery analytics), and any deployment, monitoring, or billing concerns. The reason is scope discipline: this slice exists to make one thing reliably true — that the person using the app is exactly who the app thinks they are, and that a single honest mistake (a double submit, a slow capslock, a forgotten password) can never cost them the account. Everything else is deliberately the job of other slices so that this thin, high-stakes trust boundary stays small enough to reason about and verify end to end.
 
 ## Section 2: How To Run It
 
@@ -107,7 +107,7 @@ By the end, the reader should be able to name the file for any behaviour: forms 
 
 ## Section 4: The Data Model
 
-The authentication slice owns exactly four tables: **User**, **VerificationToken**, **AccountRequest**, and **LoginAttempt**. (The schema also defines `Client`, `Project`, `TimeEntry` and `Payment` — those belong to other slices and are unused here, except that `User` is their owner, which matters only for the cascade rule below.)
+The authentication slice owns exactly four tables: **User**, **VerificationToken**, **AccountRequest**, and **LoginAttempt**. No other tables exist in this repository.
 
 ### `User` — one row per person who can sign in
 
@@ -126,9 +126,6 @@ model User {
   deactivatedAt DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-
-  clients  Client[]
-  projects Project[]
 
   @@index([email])
 }
@@ -213,9 +210,9 @@ These are the concrete "last line of defence" rules, each preventing a state tha
 1. **`User.email` unique (unique index)** → it is **impossible to have two accounts with the same email**, no matter how badly the sign-up code races. This is also the exact error (`P2002`) the idempotency handler leans on.
 2. **`VerificationToken.token` unique** → it is **impossible for two codes/links to be the same string**, so a look-up by token always resolves to exactly one intent.
 3. **`LoginAttempt` `@@unique([email, ip])`** → it is **impossible to have two divergent lockout counters for the same email+IP**, which keeps the lockout escalation coherent under concurrent failures.
-4. **`User.id` primary key + `Client`/`Project` FK with `onDelete: Cascade`** → it is **impossible to delete a user and leave an orphaned client/project** behind.
+4. **`AccountRequest.idempotencyKey` unique** → it is **impossible for two sign-up requests to claim the same idempotency key**, which is the database backstop for the double-submit safe sign-up handler.
 
-**Honest caveat — what the schema does *not* enforce:** `status` and `type` string values, email shape, "failures can't be negative", and the 6-digit-ness of a code are all application-level (Zod + action code), not database CHECK constraints. The schema has no `CHECK`s and no enum columns. The four uniqueness rules above plus the cascade are the only database-enforced invariants — chosen because they're the ones where a bug could otherwise corrupt identity, and where an error message from the DB is still a correct, safe outcome.
+**Honest caveat — what the schema does *not* enforce:** `status` and `type` string values, email shape, "failures can't be negative", and the 6-digit-ness of a code are all application-level (Zod + action code), not database CHECK constraints. The schema has no `CHECK`s and no enum columns. The four uniqueness rules above are the only database-enforced invariants — chosen because they're the ones where a bug could otherwise corrupt identity or duplicate an account, and where an error message from the DB is still a correct, safe outcome.
 
 ## Section 5: The Concepts
 
@@ -489,7 +486,7 @@ An honest floor plan of where this work ends. It is not a list of failures — i
 
 ### What I left out because it was outside the brief
 
-- **The business domain.** Client records, projects, time entries, and payments exist in the schema but are deliberately untouched — they belong to other slices and are only present as the relationships this slice's `User` owns.
+- **The business domain.** The slice deliberately contains no freelancer workspace features at all — no tables, screens, or routes for client records, projects, time entries, or payments. Those belong to other slices and are what this repository's authentication gates in front of.
 - **Profile management.** No change-email, no change-password screen, no avatar, no security keys, no in-app 2FA — account *lifecycle security* (deactivate/reactivate/delete) is partially in place, but full profile UX was never this slice's job.
 - **Google OAuth polish.** The provider is wired and auto-links verified Google users, but without real OAuth credentials it's inert (the button is hidden when `GOOGLE_CLIENT_ID`/`SECRET` are absent). Complete OAuth account-linking UX was explicitly out of scope.
 - **Internationalisation, theming, analytics.** Nothing about the non-auth product surface.

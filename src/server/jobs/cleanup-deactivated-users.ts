@@ -9,7 +9,6 @@ export interface CleanupResult {
 
 /**
  * Hard deletes user accounts that have been deactivated for more than 30 days.
- * Cascades to all owned Clients, Projects, TimeEntries, and Payments.
  */
 export async function cleanupDeactivatedUsersJob(): Promise<CleanupResult> {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);

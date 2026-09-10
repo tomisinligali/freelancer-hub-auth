@@ -16,7 +16,7 @@ const lora = Lora({
 
 export const metadata: Metadata = {
   title: "Freelancer Hub",
-  description: "Track your clients, projects, time, and payments.",
+  description: "Sign in, sign up, and manage your Freelancer Hub account.",
   icons: {
     icon: "/icon.svg",
   },

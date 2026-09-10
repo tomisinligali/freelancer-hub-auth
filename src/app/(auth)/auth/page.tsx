@@ -53,7 +53,7 @@ const VIEW_CONFIG: Record<
   signup: {
     title: "Create your account",
     documentTitle: "Create account",
-    subtitle: "Start tracking your freelance projects and payments",
+    subtitle: "Create your account to safely access your freelance workspace",
   },
   forgot: {
     title: "Reset password",

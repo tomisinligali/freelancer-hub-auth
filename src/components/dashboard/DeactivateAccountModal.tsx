@@ -68,7 +68,7 @@ export function DeactivateAccountModal() {
               Delete Account
             </h2>
             <p className="fh-modal-description">
-              Deactivating your account will immediately log you out. Your data will be kept intact for a <strong>30-day grace period</strong>, during which you can reactivate your account at any time. After 30 days, your account and all associated clients, projects, time entries, and payments will be permanently deleted.
+              Deactivating your account will immediately log you out. Your data will be kept intact for a <strong>30-day grace period</strong>, during which you can reactivate your account at any time through the email link we send you. After 30 days, your account and all associated data will be permanently deleted.
             </p>
 
             <FormMessage type="error" message={error} />

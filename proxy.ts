@@ -7,13 +7,7 @@ export default auth((request) => {
 
   const isAuthRoute = pathname === "/auth" || pathname.startsWith("/auth/");
 
-  const isProtectedRoute =
-    pathname.startsWith("/dashboard") ||
-    pathname.startsWith("/projects") ||
-    pathname.startsWith("/clients") ||
-    pathname.startsWith("/time") ||
-    pathname.startsWith("/payments") ||
-    pathname.startsWith("/settings");
+  const isProtectedRoute = pathname.startsWith("/dashboard");
 
   if (isProtectedRoute && !session?.user) {
     const url = new URL("/auth", request.url);
@@ -34,11 +28,6 @@ export default auth((request) => {
 export const config = {
   matcher: [
     "/dashboard/:path*",
-    "/projects/:path*",
-    "/clients/:path*",
-    "/time/:path*",
-    "/payments/:path*",
-    "/settings/:path*",
     "/auth",
   ],
 };
