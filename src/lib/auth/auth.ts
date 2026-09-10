@@ -5,6 +5,7 @@ import { CredentialsSignin } from "@auth/core/errors";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db/prisma";
 import { authConfig } from "@/lib/auth/auth.config";
+import { loginSchema } from "@/lib/validation/auth";
 import {
   enforceLoginRateLimit,
   getClientIp,
@@ -58,13 +59,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials, request) {
-        if (!credentials?.email || !credentials?.password) {
+        const ip = getClientIp(request);
+
+        // Server-side schema validation mirrors the client (loginSchema)
+        const parsed = loginSchema.safeParse({
+          email: credentials?.email,
+          password: credentials?.password,
+        });
+        if (!parsed.success) {
+          const attemptedEmail =
+            typeof credentials?.email === "string"
+              ? String(credentials.email).trim().toLowerCase()
+              : "";
+          await recordLoginFailure(attemptedEmail, ip);
           throw new InvalidCredentialsError();
         }
 
-        const email = String(credentials.email).trim().toLowerCase();
-        const password = String(credentials.password);
-        const ip = getClientIp(request);
+        const { email, password } = parsed.data;
 
         // Security Rule: progressive lockout on repeated failed logins
         await enforceLoginRateLimit(email, ip);

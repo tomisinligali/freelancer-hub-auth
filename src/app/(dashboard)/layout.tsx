@@ -18,22 +18,9 @@ export default async function DashboardLayout({
     <div className="fh-dashboard-shell">
       <header className="fh-dashboard-header">
         <div className="fh-dashboard-header-inner">
-          <div className="fh-dashboard-brand-row">
-            <Link href="/dashboard" className="fh-dashboard-logo">
-              Freelancer Hub
-            </Link>
-            <nav className="fh-dashboard-nav">
-              <Link href="/dashboard" className="fh-nav-link">
-                Dashboard
-              </Link>
-              <Link href="/projects" className="fh-nav-link">
-                Projects
-              </Link>
-              <Link href="/clients" className="fh-nav-link">
-                Clients
-              </Link>
-            </nav>
-          </div>
+          <Link href="/dashboard" className="fh-dashboard-logo">
+            Freelancer Hub
+          </Link>
           <div className="fh-dashboard-user-info">
             <span className="fh-dashboard-user-email">{session.user.email}</span>
           </div>

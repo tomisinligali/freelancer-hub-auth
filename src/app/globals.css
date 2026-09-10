@@ -126,7 +126,7 @@ input, button, textarea, select {
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.fh-input:focus {
+.fh-input:focus-visible {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px var(--color-primary-container);
 }
@@ -135,7 +135,7 @@ input, button, textarea, select {
   border-color: var(--color-error);
 }
 
-.fh-input--error:focus {
+.fh-input--error:focus-visible {
   border-color: var(--color-error);
   box-shadow: 0 0 0 3px var(--color-error-container);
 }
@@ -218,6 +218,12 @@ input, button, textarea, select {
 
 .fh-input-toggle:hover {
   color: var(--color-on-surface);
+}
+
+.fh-input-toggle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .fh-password-field-wrapper {
@@ -341,29 +347,6 @@ input, button, textarea, select {
   border: 1px solid var(--color-info);
 }
 
-/* ─── Dev Helper Box ─── */
-.fh-dev-box {
-  background: var(--color-surface-container);
-  border: 1px dashed var(--color-primary);
-  border-radius: 8px;
-  padding: var(--spacing-medium-spacing);
-  margin-bottom: var(--spacing-base-spacing);
-}
-
-.fh-dev-box-title {
-  font: var(--typography-label-medium);
-  font-weight: 600;
-  color: var(--color-primary);
-  margin-bottom: var(--spacing-extra-extra-samll-spacing);
-}
-
-.fh-dev-box-link {
-  font: var(--typography-body-small);
-  color: var(--color-primary);
-  word-break: break-all;
-  text-decoration: underline;
-}
-
 /* ─── Auth Footer ─── */
 .fh-auth-footer {
   margin-top: var(--spacing-large-spacing);
@@ -448,6 +431,8 @@ button.fh-auth-link--small {
   max-width: 1200px;
   width: 100%;
   margin: 0 auto;
+  display: flex;
+  flex-direction: column;
   padding: var(--spacing-extra-large-spacing) var(--spacing-large-spacing);
 }
 
@@ -457,12 +442,23 @@ button.fh-auth-link--small {
   gap: var(--spacing-large-spacing);
 }
 
+/* Center the single welcome card both axes across the remaining viewport */
+.fh-dashboard-content--centered {
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 0;
+}
+
 .fh-dashboard-welcome-card {
+  width: 100%;
+  max-width: 440px;
   background: var(--color-surface-container-lowest);
-  border: 1px solid var(--color-neutral-variant-container);
-  border-radius: 12px;
+  border: 1px dashed var(--color-primary);
+  border-radius: 16px;
   padding: var(--spacing-extra-large-spacing);
-  box-shadow: var(--effect-soft-shadow);
+  box-shadow: 1px 1px 10px 0px rgba(0, 0, 0, 0.06);
 }
 
 .fh-dashboard-title {
@@ -488,6 +484,21 @@ button.fh-auth-link--small {
   display: flex;
   align-items: center;
   gap: var(--spacing-base-spacing);
+}
+
+/* Sign-out button fills the card's content width (inner padding retained) */
+.fh-dashboard-welcome-card .fh-signout-button {
+  width: 100%;
+}
+
+/* Dashboard card only: name→button 20px→50px */
+.fh-dashboard-welcome-card .fh-dashboard-greeting {
+  margin-bottom: 50px;
+}
+
+/* Dashboard card only: title→name 12px→6px */
+.fh-dashboard-welcome-card .fh-auth-title-group {
+  margin-bottom: 6px;
 }
 
 /* ─── Danger Button Outline ─── */

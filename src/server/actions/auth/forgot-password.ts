@@ -11,12 +11,12 @@ import {
   clearLoginFailures,
   lockedMessage,
 } from "@/lib/auth/rate-limit";
+import { enqueuePasswordResetEmail } from "@/lib/background/email-jobs";
 
 export interface ForgotPasswordResponse {
   success: boolean;
   error?: string;
   message?: string;
-  resetToken?: string; // provided for development/testing ease
 }
 
 export async function forgotPasswordAction(formData: FormData): Promise<ForgotPasswordResponse> {
@@ -76,10 +76,12 @@ export async function forgotPasswordAction(formData: FormData): Promise<ForgotPa
     // A real reset email was (about to be) prepared — clear accumulated failures
     await clearLoginFailures(email, ip);
 
+    // Background job: email the one-time reset link (fired exactly once)
+    enqueuePasswordResetEmail(email, token);
+
     return {
       success: true,
       message: "If that email address is in our system, you will receive a password reset link shortly.",
-      resetToken: token,
     };
   } catch (err: unknown) {
     console.error("Forgot password error:", err);

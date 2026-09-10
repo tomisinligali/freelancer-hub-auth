@@ -7,7 +7,6 @@ import React, {
   useTransition,
   Suspense,
 } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { signupAction } from "@/server/actions/auth/signup";
@@ -15,6 +14,7 @@ import { forgotPasswordAction } from "@/server/actions/auth/forgot-password";
 import { resetPasswordAction } from "@/server/actions/auth/reset-password";
 import { verifyEmailAction } from "@/server/actions/auth/verify-email";
 import { resendVerificationEmailAction } from "@/server/actions/auth/resend-verification";
+import { rotateCsrfTokenAction } from "@/server/actions/auth/csrf";
 import { clientValidation } from "@/lib/validation/auth";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -219,7 +219,8 @@ function SignInForm({
   };
 
   const canSubmit =
-    values.email.trim() !== "" && values.password.trim() !== "";
+    clientValidation.login(values).fieldErrors.email === undefined &&
+    clientValidation.login(values).fieldErrors.password === undefined;
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -234,6 +235,9 @@ function SignInForm({
 
     startTransition(async () => {
       try {
+        // Pre-login: rotate to a fresh CSRF token so this attempt never reuses a stale one
+        await rotateCsrfTokenAction();
+
         const result = await signIn("credentials", {
           email,
           password,
@@ -243,6 +247,8 @@ function SignInForm({
         if (result?.error) {
           setError(parseSignInError(result.error, result.code));
         } else {
+          // Post-login: the authenticated session must not keep the pre-login CSRF token
+          await rotateCsrfTokenAction();
           router.push(callbackUrl);
           router.refresh();
         }
@@ -265,6 +271,7 @@ function SignInForm({
           required
           autoComplete="email"
           placeholder="you@example.com"
+          autoFocus
           error={fieldErrors.email}
           onBlur={handleFieldBlur("email")}
           onChange={handleFieldChange("email")}
@@ -494,7 +501,6 @@ function ForgotPasswordForm({ onSwitchView }: { onSwitchView: (view: AuthView) =
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [devResetToken, setDevResetToken] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [email, setEmail] = useState("");
 
@@ -514,7 +520,6 @@ function ForgotPasswordForm({ onSwitchView }: { onSwitchView: (view: AuthView) =
     e.preventDefault();
     setError(null);
     setSuccessMessage(null);
-    setDevResetToken(null);
 
     const result = clientValidation.forgotPassword({ email });
     setFieldErrors(result.fieldErrors);
@@ -529,9 +534,6 @@ function ForgotPasswordForm({ onSwitchView }: { onSwitchView: (view: AuthView) =
         setError(res.error || "Failed to process request.");
       } else {
         setSuccessMessage(res.message || "Reset link generated.");
-        if (res.resetToken) {
-          setDevResetToken(res.resetToken);
-        }
       }
     });
   };
@@ -540,18 +542,6 @@ function ForgotPasswordForm({ onSwitchView }: { onSwitchView: (view: AuthView) =
     <>
       <FormMessage type="error" message={error} />
       <FormMessage type="success" message={successMessage} />
-
-      {devResetToken ? (
-        <div className="fh-dev-box">
-          <p className="fh-dev-box-title">Reset Link (Development):</p>
-          <Link
-            href={`/auth?view=reset&token=${devResetToken}`}
-            className="fh-dev-box-link"
-          >
-            Click here to reset password
-          </Link>
-        </div>
-      ) : null}
 
       {!successMessage ? (
         <form onSubmit={handleSubmit} className="fh-auth-form" noValidate>

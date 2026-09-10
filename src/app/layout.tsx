@@ -17,6 +17,9 @@ const lora = Lora({
 export const metadata: Metadata = {
   title: "Freelancer Hub",
   description: "Track your clients, projects, time, and payments.",
+  icons: {
+    icon: "/icon.svg",
+  },
 };
 
 export default function RootLayout({

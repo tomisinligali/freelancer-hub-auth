@@ -94,3 +94,48 @@ export async function sendVerificationEmail(
     console.error("[mail error] Failed to dispatch SMTP email:", error);
   }
 }
+
+export async function sendPasswordResetEmail(
+  to: string,
+  token: string
+): Promise<void> {
+  const baseUrl = getAppUrl();
+  const from = process.env.MAIL_FROM || `"Freelancer Hub" <noreply@${new URL(baseUrl).hostname}>`;
+  const resetUrl = `${baseUrl}/auth?view=reset&token=${token}`;
+
+  try {
+    const transporter = await getTransporter();
+    const info = await transporter.sendMail({
+      from,
+      to,
+      subject: "Reset your Freelancer Hub password",
+      text: `You requested a password reset for your Freelancer Hub account.\n\nClick the link below to choose a new password. This link expires in 1 hour and can only be used once:\n\n${resetUrl}\n\nIf you did not request a password reset, you can safely ignore this email.`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
+          <h2 style="color: #7e2cde;">Reset your Freelancer Hub password</h2>
+          <p>You requested a password reset for your Freelancer Hub account.</p>
+          <p>
+            <a href="${resetUrl}" style="display: inline-block; background: #7e2cde; color: #fff; text-decoration: none; padding: 12px 20px; border-radius: 8px;">
+              Reset your password
+            </a>
+          </p>
+          <p>
+            Or copy and paste this link into your browser:<br/>
+            <span style="font-size: 13px; color: #555; word-break: break-all;">${resetUrl}</span>
+          </p>
+          <p style="font-size: 13px; color: #555;">This link expires in 1 hour and can only be used once.</p>
+          <p style="font-size: 12px; color: #888;">If you did not request a password reset, you can safely ignore this email.</p>
+        </div>
+      `,
+    });
+
+    const previewUrl = nodemailer.getTestMessageUrl(info);
+    if (previewUrl) {
+      console.log(`[mail] View sent email online inbox preview at: ${previewUrl}`);
+    } else {
+      console.info("[mail] Password reset email sent successfully:", info.messageId);
+    }
+  } catch (error) {
+    console.error("[mail error] Failed to dispatch SMTP email:", error);
+  }
+}

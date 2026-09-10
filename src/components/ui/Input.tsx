@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
 
 function EyeIcon() {
   return (
@@ -53,7 +53,9 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
     { label, error, valid, helperText, hint, id, className = "", type, onChange, autoComplete, ...props },
     ref
   ) => {
-    const inputId = id || (label ? label.toLowerCase().replace(/\s+/g, "-") : undefined);
+    // useId guarantees a unique id per instance so label/error/helper bindings never collide
+    const generatedId = useId();
+    const inputId = id ?? `${generatedId}-input`;
     const isPassword = type === "password";
     const [value, setValue] = useState<string>("");
     const [showPassword, setShowPassword] = useState(false);
@@ -66,6 +68,15 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
     };
 
     const isEmpty = value.length === 0;
+
+    const errorId = `${inputId}-error`;
+    const helperId = `${inputId}-helper`;
+    const hintId = `${inputId}-hint`;
+
+    const describedBy =
+      [error ? errorId : null, helperText ? helperId : null, hint ? hintId : null]
+        .filter(Boolean)
+        .join(" ") || undefined;
 
     return (
       <div className="fh-input-group">
@@ -82,6 +93,8 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             className={`fh-input ${error ? "fh-input--error" : valid ? "fh-input--valid" : ""} ${className}`}
             onChange={handleChange}
             autoComplete={autoComplete}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={describedBy}
             {...props}
           />
           {isPassword && !isEmpty ? (
@@ -97,13 +110,17 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           ) : null}
         </div>
         {error ? (
-          <span className="fh-input-error-text" role="alert">
+          <span id={errorId} className="fh-input-error-text" role="alert">
             {error}
           </span>
         ) : hint ? (
-          hint
+          <div id={hintId} className="fh-input-hint">
+            {hint}
+          </div>
         ) : helperText ? (
-          <span className="fh-input-helper-text">{helperText}</span>
+          <span id={helperId} className="fh-input-helper-text">
+            {helperText}
+          </span>
         ) : null}
       </div>
     );
