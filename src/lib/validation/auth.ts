@@ -88,10 +88,17 @@ export const idempotencyKeySchema = z
     "Idempotency key is malformed."
   );
 
+export const verifyCodeSchema = z
+  .string()
+  .trim()
+  .min(1, "Verification code is required.")
+  .regex(/^\d{6}$/, "Verification code must be a 6-digit number.");
+
 export type SignupInput = z.infer<typeof signupSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+export type VerifyCodeInput = z.infer<typeof verifyCodeSchema>;
 
 export interface FullNameParts {
   fullName: string;
@@ -246,4 +253,6 @@ export const clientValidation = {
     password: string;
     confirmPassword: string;
   }) => firstFieldError(resetPasswordSchema, values),
+  verifyCode: (value: string) =>
+    scalarError(verifyCodeSchema, value),
 };

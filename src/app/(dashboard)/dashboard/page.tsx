@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth/auth";
 import { prisma } from "@/lib/db/prisma";
 import { SignOutButton } from "@/components/dashboard/SignOutButton";
-import { DeactivateAccountModal } from "@/components/dashboard/DeactivateAccountModal";
 
 export const metadata = {
   title: "Dashboard | Freelancer Hub",
@@ -42,9 +41,6 @@ export default async function DashboardPage() {
         <p className="fh-dashboard-greeting">Welcome, {name}</p>
         <div className="fh-dashboard-actions">
           <SignOutButton />
-        </div>
-        <div className="fh-dashboard-account-actions">
-          <DeactivateAccountModal />
         </div>
       </div>
     </div>

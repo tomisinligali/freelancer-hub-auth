@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useTransition } from "react";
+import { signOut } from "next-auth/react";
 import { Button } from "@/components/ui/Button";
-import { signOutAction } from "@/server/actions/auth/signout";
 
 export function SignOutButton() {
   const [isPending, startTransition] = useTransition();
@@ -10,7 +10,7 @@ export function SignOutButton() {
   return (
     <Button
       variant="primary"
-      onClick={() => startTransition(() => signOutAction())}
+      onClick={() => startTransition(() => signOut({ callbackUrl: "/auth" }))}
       isLoading={isPending}
       className="fh-signout-button"
     >

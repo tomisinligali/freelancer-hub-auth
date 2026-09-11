@@ -2,9 +2,9 @@
 
 ## Section 1: What This Is
 
-This slice is the complete sign-in, sign-up, and account-security layer of the application — everything that happens before a user reaches the dashboard. A visitor can create an account with their full name, email, and password; prove they own the email by entering a six-digit code that arrives by mail; sign in with those credentials; reset a forgotten password through a link that works exactly once and expires within an hour; and optionally sign in with Google. Every entry point validates its input twice (once in the browser for instant feedback, once on the server as the source of truth), counteracts both attackers and accidents: failed authentication locks the offender out for escalating periods, a double-clicked or double-submitted sign-up cannot create two accounts, and the session that results is a signed cookie that scripts cannot read and that rotates its anti-forgery token before and after every login. Once signed in, users land on a guarded dashboard that cannot be reached without a valid session and that greets them minimally ("You Are Signed In — Welcome, name") — the end of this slice. Everything beyond authentication lives in other slices.
+This slice is the complete sign-in, sign-up, and account-security layer — everything before a user reaches the dashboard. A visitor can create an account (full name, email, password), prove email ownership with a six-digit code sent by mail, sign in, reset a forgotten password through a single-use link that expires within an hour, or sign in with Google. Every entry point is validated twice (in the browser for instant feedback, on the server as source of truth), and each is hardened: failed authentication causes escalating lockouts, a double-submitted sign-up cannot create two accounts, and the resulting session is a script-unreadable signed cookie whose anti-forgery token rotates before and after every login. Signed-in users land on a guarded dashboard ("You Are Signed In — Welcome, name") that no unauthenticated request can reach — the end of this slice.
 
-Deliberately not included: nothing about the paying work — no client records, no projects, no invoices, no time-tracking screens; those live in separate slices (each in its own repository), and this repository's data model contains no tables for them at all. Also not included: profile and account management beyond the essentials (no email change, avatar, or two-factor authentication yet), a production email infrastructure (mail is handed to a working SMTP sender and left unattended past that point — no retry queue or delivery analytics), and any deployment, monitoring, or billing concerns. The reason is scope discipline: this slice exists to make one thing reliably true — that the person using the app is exactly who the app thinks they are, and that a single honest mistake (a double submit, a slow capslock, a forgotten password) can never cost them the account. Everything else is deliberately the job of other slices so that this thin, high-stakes trust boundary stays small enough to reason about and verify end to end.
+Deliberately not included: the paying work itself (no clients, projects, invoices, or time-tracking — and the data model has no tables for them), profile/account management beyond the essentials (no email change, avatar, or 2FA yet), production-grade email infrastructure (mail goes to a working SMTP sender with no retry queue or delivery analytics), and deployment, monitoring, or billing. This scope discipline keeps the trust boundary small enough to reason about and verify end to end — the one guarantee this slice makes is that the person using the app is exactly who the app thinks they are, and that an honest mistake (double submit, slow capslock, forgotten password) can never cost them the account.
 
 ## Section 2: How To Run It
 
@@ -59,7 +59,7 @@ Notes: `.env.example` already exists in the repo with commented placeholders (re
 
 This is the journey a person takes from arriving to logged-out to sitting on the dashboard — the happy path (create account → verify → sign in → dashboard), plus the two detours (forgot/reset password, and re-sending a code). Follow along in the code; each step names its home.
 
-**A note on where it all lives:** the whole screen is one page, `src/app/(auth)/auth/page.tsx`, which swaps between five views (`signin`, `signup`, `forgot`, `reset`, `verify`) — a selector made of a `view` query parameter and React state. The server-side brains live in `src/server/actions/auth/*.ts` (server actions), the rules in `src/lib/validation/auth.ts`, password work in `bcrypt`, and session logic in `src/lib/auth/auth.ts`.
+**A note on where it all lives:** the whole screen is one page, `src/app/(auth)/auth/page.tsx`, which swaps between five views (`signin`, `signup`, `forgot`, `reset`, `verify`) — a selector made of a `view` query parameter and React state. All account mutations run through plain HTTP endpoints under `/api/auth/*` (`src/app/api/auth/signup | verify | resend | forgot | reset | csrf-rotate/route.ts`), whose brains live in one shared module, `src/server/services/auth-flows.ts`; the rules live in `src/lib/validation/auth.ts`, password work in `bcrypt`, and session logic in `src/lib/auth/auth.ts`. The routes accept JSON only (`Content-Type: application/json` is enforced), which is itself the CSRF control for this API layer — a cross-site `<form>` cannot send a JSON payload without CORS preflight permission, which is never granted. The account flows were moved from Next.js server actions to these route handlers so they behave identically under a production `next start` build and the browser, and so the endpoints can be exercised directly (as Proof 1 does below).
 
 **Step 1 — Arrival**
 - **User:** visits the app. Any path, `/` included, eventually lands on `/auth` (the root redirects here).
@@ -68,20 +68,20 @@ This is the journey a person takes from arriving to logged-out to sitting on the
 
 **Step 2 — Create account**
 - **User:** types full name, email, and password. Note `src/components/ui/Input.tsx` — every field has a label physically bound to it and a live error message beneath it.
-- **Frontend:** with every keystroke, `handleFieldChange` runs the *client* copy of the rules (`clientValidation` in `validation/auth.ts`) and shows/reveals errors instantly. There's no typing when the email is misformatted or the password is weak. On submit it builds a `FormData` with trimmed fields **plus an idempotency key** (a UUID it keeps in `sessionStorage`, key `fh:signup:idempotencyKey`) and calls the server action `signupAction`.
-- **Server** (`src/server/actions/auth/signup.ts`): re-validates everything with `signupSchema` and the idempotency key format — the client can be tricked, the server can't. It checks the lockout table for this email+IP. It looks up whether this key already created an account: if yes (COMPLETED) it replays the same success; if another copy of this submit is still running (PENDING) it says "already being processed". Then it does the expensive work — `bcrypt.hash(password, 12)` — and in one database transaction creates the user, a 6-digit verification code (with a 24-hour expiry) and a row marking this key as used. If a duplicate email slips in, the static unique constraint trips `P2002` and the server reports "account already exists" and records a failed attempt. Success → `enqueueVerificationEmail` hands the code to the mailer (`src/lib/background/email-jobs.ts` → `src/lib/mail.ts`), and the failures counter is cleared.
+- **Frontend:** with every keystroke, `handleFieldChange` runs the *client* copy of the rules (`clientValidation` in `validation/auth.ts`) and shows/reveals errors instantly. There's no typing when the email is misformatted or the password is weak. On submit it POSTs a JSON body with the trimmed fields **plus an idempotency key** (a UUID it keeps in `sessionStorage`, key `fh:signup:idempotencyKey`) to `/api/auth/signup` through a small `postJson` helper in `page.tsx`.
+- **Server** (`handleSignup` in `src/server/services/auth-flows.ts`): re-validates everything with `signupSchema` and the idempotency key format — the client can be tricked, the server can't. It checks the lockout table for this email+IP. It looks up whether this key already created an account: if yes (COMPLETED) it replays the same success; if another copy of this submit is still running (PENDING) it says "already being processed". Then it does the expensive work — `bcrypt.hash(password, 12)` — and in one database transaction creates the user, a 6-digit verification code (with a 24-hour expiry) and a row marking this key as used. If a duplicate email slips in, the static unique constraint trips `P2002` and the server reports "account already exists" and records a failed attempt. Success → `enqueueVerificationEmail` hands the code to the mailer (`src/lib/background/email-jobs.ts` → `src/lib/mail.ts`), and the failures counter is cleared.
 
 **Step 3 — Verify email**
 - **User:** checks their inbox, types the 6-digit code from the email into the verify view.
-- **Frontend:** sends `verifyEmailAction(code)`. If the code never arrives, "Resend code" calls `resendVerificationEmailAction(email)`.
-- **Server:** `verify-email.ts` looks the code up in the database, checks it really is an email-verification code, and compares the **stored** `expiresAt` against now — the expiry lives in the DB, not the browser. It marks `emailVerified` and deletes the code, so a code works exactly once. Meanwhile `resend-verification.ts` enforces the 60-second cooldown from the stored timestamp of the last code, then replaces all old codes with a fresh one (also 24h) and emails it.
+- **Frontend:** POSTs `{ code }` to `/api/auth/verify`. If the code never arrives, "Resend code" POSTs `{ email }` to `/api/auth/resend`.
+- **Server** (`handleVerifyEmail` / `handleResendVerification` in `auth-flows.ts`): looks the code up in the database, checks it really is an email-verification code, and compares the **stored** `expiresAt` against now — the expiry lives in the DB, not the browser. It marks `emailVerified` and deletes the code, so a code works exactly once. Meanwhile the resend handler enforces the 60-second cooldown from the stored timestamp of the last code, then replaces all old codes with a fresh one (also 24h) and emails it.
 - **Frontend:** on success the view switches to sign-in.
 
 **Step 4 — Sign in**
 - **User:** types email and password. (Button stays disabled until the fields pass the same client rules.)
-- **Frontend:** first calls `rotateCsrfTokenAction` (`src/server/actions/auth/csrf.ts`) so this attempt uses a brand-new anti-forgery token, then hands over to `next-auth/react`'s `signIn("credentials", …)`, which POSTs the credentials to `/api/auth/callback/credentials`.
+- **Frontend:** first POSTs to `/api/auth/csrf-rotate` so this attempt uses a brand-new anti-forgery token, then hands over to `next-auth/react`'s `signIn("credentials", …)`, which POSTs the credentials to `/api/auth/callback/credentials`.
 - **Server** (`src/lib/auth/auth.ts`, the `authorize` function): parses credentials through `loginSchema` (the same rules as the client), enforces the progressive lockout (`src/lib/auth/rate-limit.ts` — 3 failures → 2 minutes, doubling up to 24h), looks up the user, and walks the guardrails in order: no such user → record failure; account deactivated → refuse; email unverified → tell them; wrong password → record failure. Only a bcrypt-verified password clears the counter and returns a user.
-- **Server (session):** Auth.js signs a JWT and sets the `authjs.session-token` cookie (30 days, `httpOnly`, `sameSite: "lax"`). The frontend then finishes with a second `rotateCsrfTokenAction`, so the session is never tied to the pre-login token, and navigates to the `callbackUrl`.
+- **Server (session):** Auth.js signs a JWT and sets the `authjs.session-token` cookie (30 days, `httpOnly`, `sameSite: "lax"`). The frontend then finishes with a second POST to `/api/auth/csrf-rotate`, so the session is never tied to the pre-login token, and navigates to the `callbackUrl`.
 
 **Step 5 — The guarded dashboard**
 - **User:** (passively) is on `/dashboard`.
@@ -90,20 +90,20 @@ This is the journey a person takes from arriving to logged-out to sitting on the
 
 **Step 6 — Forgot password**
 - **User:** from sign-in clicks "Forgot password" and enters the account email.
-- **Frontend:** validates the email and calls `forgotPasswordAction`.
-- **Server** (`forgot-password.ts`): validates, checks lockout, and — to avoid confirming which emails exist — answers "if that email is in our system, you'll get a link" whether or not the user exists. For a real user it deletes any prior reset tokens, creates a fresh 32-byte random token with a **1-hour** expiry (type `password_reset`), clears failures, and emails a link built as `${APP_URL}/auth?view=reset&token=…` (`mail.ts:104`).
+- **Frontend:** validates the email and POSTs `{ email }` to `/api/auth/forgot`.
+- **Server** (`handleForgotPassword` in `auth-flows.ts`): validates, checks lockout, and — to avoid confirming which emails exist — answers "if that email is in our system, you'll get a link" whether or not the user exists. For a real user it deletes any prior reset tokens, creates a fresh 32-byte random token with a **1-hour** expiry (type `password_reset`), clears failures, and emails a link built as `${APP_URL}/auth?view=reset&token=…` (`mail.ts:104`).
 
 **Step 7 — Reset password**
 - **User:** clicks the link (lands on `/auth?view=reset&token=…`; the token is read at `page.tsx:830`) and types a new password twice.
-- **Frontend:** validates like every other field, then calls `resetPasswordAction` with the token and password.
-- **Server** (`reset-password.ts`): re-validates, finds the token, confirms it's a reset token, checks its DB expiry (expired → deleted), hashes the new password with bcrypt 12, updates the user, and **deletes the token** — single use, so the same link can never be reused.
+- **Frontend:** validates like every other field, then POSTs `{ token, password, confirmPassword }` to `/api/auth/reset`.
+- **Server** (`handleResetPassword` in `auth-flows.ts`): re-validates, finds the token, confirms it's a reset token, checks its DB expiry (expired → deleted), hashes the new password with bcrypt 12, updates the user, and **deletes the token** — single use, so the same link can never be reused.
 
 **Step 8 — Sign out**
-- **User:** clicks "Sign Out" (the server action-backed button in the dashboard, `src/components/dashboard/SignOutButton.tsx`).
-- **Frontend:** calls `signOutAction` (`src/server/actions/auth/signout.ts`) via a transition.
-- **Server:** Auth.js's server-side sign-out clears the session cookie and returns everyone to `/auth`. Logout is always a server action — never just a client-side disappearing act.
+- **User:** clicks "Sign Out" (`src/components/dashboard/SignOutButton.tsx`).
+- **Frontend:** calls `signOut({ callbackUrl: "/auth" })` from `next-auth/react`, which POSTs to Auth.js's own `/api/auth/signout` route handler.
+- **Server:** the route clears the session cookie and returns everyone to `/auth`. Logout always runs server-side — never just a client-side disappearing act.
 
-By the end, the reader should be able to name the file for any behaviour: forms → `page.tsx`, business rules → `validation/auth.ts` + `server/actions/auth/*`, the sign-in gatekeeping → `auth.ts`, the door → `proxy.ts` + the dashboard layout, and the two detours → `forgot-password.ts` + `reset-password.ts`.
+By the end, the reader should be able to name the file for any behaviour: forms → `page.tsx`, business rules → `validation/auth.ts` + `server/services/auth-flows.ts` (exposed at `/api/auth/*`), the sign-in gatekeeping → `auth.ts`, the door → `proxy.ts` + the dashboard layout, and the two detours → `handleForgotPassword` + `handleResetPassword` (both in `auth-flows.ts`).
 
 ## Section 4: The Data Model
 
@@ -224,7 +224,7 @@ These eight concepts are exactly the eight the brief asks for, each one mapped t
 
 **Why it is needed.** If someone obtains a copy of the database, plain passwords hand them every account instantly — and because people reuse passwords, those same credentials would open accounts on other sites too. Without hashing, a single leak is a total compromise. Even with hashing, a stolen database only gives up slowly-worked strings, buying time and making mass recovery costlier than it's worth.
 
-**How I implemented it.** bcrypt with cost factor 12, using the pure-JavaScript `bcryptjs` package. The hash is created at signup (`src/server/actions/auth/signup.ts:95`) and again on password reset (`reset-password.ts:49`):
+**How I implemented it.** bcrypt with cost factor 12, using the pure-JavaScript `bcryptjs` package. The hash is created at signup and again on password reset (`handleSignup` / `handleResetPassword` in `src/server/services/auth-flows.ts`):
 ```ts
 const passwordHash = await bcrypt.hash(password, 12);
 ```
@@ -251,7 +251,7 @@ export function lockoutDurationMinutes(failures: number): number {
   return Math.min(2 * 2 ** (failures - 3), 24 * 60);
 }
 ```
-`enforceLoginRateLimit`/`recordLoginFailure` are called from all four entry points (login `auth.ts:70`, signup `signup.ts:67`, forgot `forgot-password.ts:35`, resend `resend-verification.ts:39`); every failure increments the count, a successful login calls `clearLoginFailures`.
+`enforceLoginRateLimit`/`recordLoginFailure` are called from all entry points — login in `auth.ts`, and a shared set of handlers in `auth-flows.ts` for signup, forgot-password, and resend-verification; every failure increments the count, a successful login calls `clearLoginFailures`.
 
 **What I chose against, and why.** An in-memory counter per IP was my first cut (`src/lib/security/rate-limit.ts`), abandoned and removed from the repository in review — it resets on every restart and can't see the email behind a shared IP. I also ruled out a fixed window per IP alone, because a rotating attacker slips through and a whole office behind one IP gets locked out collectively. The `(email, ip)` pair, stored and escalating, was the deliberate middle ground.
 
@@ -268,7 +268,7 @@ const passwordSchema = z.string().trim().min(1, "Password is required.")
   .max(64, "Password must be at most 64 characters long.")
   .superRefine((value, ctx) => { /* lowercase, uppercase, digit, special */ });
 ```
-Server actions call `validateSignupInput`, `loginSchema.safeParse` (inside `authorize`, `auth.ts:68`), `validateForgotPasswordInput`, `validateResetPasswordInput`. On the client, the same sheets are exported as `clientValidation` and run on every keystroke in `page.tsx` (`handleFieldChange`), so the errors that appear while typing are exactly the errors the server would produce.
+The server handlers call `validateSignupInput`, `loginSchema.safeParse` (inside `authorize`, `auth.ts:68`), `validateForgotPasswordInput`, `validateResetPasswordInput`. On the client, the same sheets are exported as `clientValidation` and run on every keystroke in `page.tsx` (`handleFieldChange`), so the errors that appear while typing are exactly the errors the server would produce.
 
 **What I chose against, and why.** Scattered `if/else` checks inside each handler (drift and repetition), and HTML5-only validation with no server counterpart (the browser can be ignored). I also chose to derive the shared Zod schemas rather than keep two separate rule sets — the alternative of "client rules" + "server rules" guarantees eventual divergence.
 
@@ -294,21 +294,21 @@ Signed with `NEXTAUTH_SECRET`, `trustHost: true` for the dev host header.
 
 **Why it is needed.** If expiry only existed in the UI (a timer on the page), anyone who calls the server directly — or whose page sat open — would keep a usable code or link far past its intended life. An attacker with an intercepted email could verify or reset with stale credentials. For resets the stakes are higher: a link that never expires turns an email leak months later into full account takeover, and a reusable token lets an interceptor reset again after the owner already did. Expiry must survive restarts, live in one inspectable place, and be enforced at the moment of use — and deletion on success makes every secret single-use.
 
-**How I implemented it.** Signup writes the code with `expiresAt = now + 24h` (`signup.ts:97`). `verify-email.ts` checks the stored timestamp:
+**How I implemented it.** Signup writes the code with `expiresAt = now + 24h` (`handleSignup`). `handleVerifyEmail` checks the stored timestamp:
 ```ts
 if (new Date() > record.expiresAt) {
   await prisma.verificationToken.delete({ where: { id: record.id } });
   return { success: false, error: "Verification code has expired. Please request a new one." };
 }
 ```
-and deletes the code on success, so it works only once. Reset tokens take the same shape with a 1-hour expiry; `forgot-password.ts` mints them and replaces any older ones:
+and deletes the code on success, so it works only once. Reset tokens take the same shape with a 1-hour expiry; `handleForgotPassword` mints them and replaces any older ones:
 ```ts
 const token = crypto.randomBytes(32).toString("hex");
 const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 await prisma.verificationToken.deleteMany({ where: { identifier: email, type: "password_reset" } });
 await prisma.verificationToken.create({ data: { identifier: email, token, type: "password_reset", expiresAt } });
 ```
-`reset-password.ts` rejects expired tokens (deleting them) and deletes the token immediately after a successful reset — the same link is dead the moment it's used.
+`handleResetPassword` rejects expired tokens (deleting them) and deletes the token immediately after a successful reset — the same link is dead the moment it's used.
 
 **What I chose against, and why.** A pure client-side countdown (trivially bypassed), storing secrets with no expiry and doing "best-effort cleanup" (leaves expired-but-usable values in the data), and short reset codes (six digits are guessable under a one-hour window — fine for low-value verification, unacceptable for account takeover, so resets use 64 hex characters of randomness). I also kept the code itself as the DB key (`token @unique`) and the reset as a plain database row rather than a signed JWT in the link — a row I can inspect, expire, and destroy.
 
@@ -318,7 +318,7 @@ await prisma.verificationToken.create({ data: { identifier: email, token, type: 
 
 **Why it is needed.** Double submission is a routine, honest accident — the button is clicked twice, the network retries, the browser duplicates the request. Without idempotency, the second submit either errors confusingly ("email already exists") or, worse, tries to create again. The risk isn't just UX: two legitimate-feeling creates can collide, double-charge, or double-email.
 
-**How I implemented it.** The client keeps a UUID per submission (`sessionStorage`, key `fh:signup:idempotencyKey`) and sends it with the form. `signup.ts`:
+**How I implemented it.** The client keeps a UUID per submission (`sessionStorage`, key `fh:signup:idempotencyKey`) and sends it with the form. `handleSignup`:
 ```ts
 const existingRequest = await prisma.accountRequest.findUnique({ where: { idempotencyKey } });
 if (existingRequest) {
@@ -345,7 +345,7 @@ model User {
   @@index([email])
 }
 ```
-Signup catches the resulting `P2002` error and reports "An account with this email already exists" (`signup.ts:159`) and counts it as a failed attempt.
+Signup catches the resulting `P2002` error and reports "An account with this email already exists" (in `handleSignup`) and counts it as a failed attempt. Prisma's `P2002` normally carries the constraint name in `meta.target`, but today's Prisma + Postgres driver-adapter combination reports it without `meta.target` — the name lives one level down, at `meta.driverAdapterError.cause.constraint.index`. The classifier (`extractConstraintNames` in `auth-flows.ts`) walks the whole error chain to recover it; until this was fixed, a duplicate-email signup incorrectly surfaced as a `500` instead of the clean `409` it returns now.
 
 **What I chose against, and why.** Relying on a find-then-create check alone (the classic race), and relying on the idempotency ledger to catch duplicates through app logic. Those are good UX guards but not guarantees; the unique index is the only one that cannot race. The duplicate `@@index([email])` is kept because email lookups are the hottest path in this slice.
 
@@ -379,7 +379,7 @@ Signup catches the resulting `P2002` error and reports "An account with this ema
 
 **The cause (part one).** Auth.js beta.32 does not rotate the CSRF cookie on a credentials (JWT) sign-in; a valid, stale cookie is silently trusted and reissued.
 
-**The fix (part one).** Wrote `src/lib/auth/csrf.ts` — `createCsrfToken()` mints `token|sha256(token+secret)` using our own `NEXTAUTH_SECRET` — and a `rotateCsrfTokenAction` server action, called by the sign-in form both before `signIn(...)` and after success.
+**The fix (part one).** Wrote `src/lib/auth/csrf.ts` — `createCsrfToken()` mints `token|sha256(token+secret)` using our own `NEXTAUTH_SECRET` — and exposed it as the `/api/auth/csrf-rotate` endpoint, called by the sign-in form both before `signIn(...)` and after success.
 
 **Then the second trap.** My first live injection of a rotated cookie was *rejected* — login failed (`dashboard:307`). I suspected the jar rewrite, then the secret again. The real cause: Auth.js encodes cookie values with `encodeURIComponent` (its vendored cookie library), so on the wire the separator is `%7C`, not `|`. My raw-`|` cookie simply didn't decode to the `token|hash` the validator expected. Re-testing with the encoded form: Auth echoed my exact rotated token, credentials login succeeded, dashboard `200`.
 
@@ -441,3 +441,122 @@ The distinction between the last two matters: everything in the "out of the brie
 ## Section 8: If I Built This Again
 
 The single thing I would change is the order in which I met the requirements: I built the happy path first and then audited it against the checklist, which meant several load-bearing decisions — idempotent signup, CSRF rotation, server-side login validation, and especially brute-force protection on verification codes — were discovered as gaps *after* their code was already written, and had to be retrofitted (the CSRF fix and the login-schema fix literally required revisiting the shipped implementation). If I started over, I would invert that: turn the twelve acceptance criteria into executable checks *before* writing a single handler — a failing test for "verify a code can't be guessed," a failing test for "a ten-way concurrent signup creates one account," a failing test for "the CSRF token must change after login" — and then build until each one passes. The code would be slower to start and not a single feature would differ, but the queue of "we noticed this late" surprises this document is full of would instead have been design inputs, which is exactly the difference between work that was tested and work that was checked.
+
+## Section 9: Prove It Works
+
+Everything below is real output from a production instance (`npm run build` + `next start`) talking to the Postgres database used by the repo's `.env`, captured 11 September 2026. No browser automation was used for the API runs: the requests were issued with `curl` directly at the HTTP endpoints, proving the backend works on its own. The screenshots are Prisma Studio captures of that same database; they live in `docs/evidence/`. The accounts shown in the screenshots (`oluwatomisinligali@…`) are the real rows that existed in the database at capture time.
+
+For convenience the capture used port 3100 while the repo's documented 3000 setup was already in use; the endpoints, code, and database are identical.
+
+### Proof 1 — Direct sign-up: exact curl and what the server returned
+
+The exact command used (bypasses the browser entirely — this is the API on its own; the account name is a throwaway created only for this capture):
+
+```bash
+curl -sS -i -X POST http://localhost:3100/api/auth/signup \
+  -H "Content-Type: application/json" \
+  -d '{"fullName":"Zara Prod","email":"zara+prod@example.com","password":"Kx9#mQp2ZaR","idempotencyKey":"32429002-8198-44EF-9F63-2224E3160658"}'
+```
+
+What came back (recorded in full):
+
+```
+HTTP/1.1 200 OK
+vary: rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch
+content-type: application/json
+Date: Fri, 11 Sep 2026 14:06:17 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+Transfer-Encoding: chunked
+
+{"success":true,"message":"Account created successfully. Enter the verification code sent to your email."}
+```
+
+A 200 with the success message, plus the idempotency key accepted. The same call with a duplicate idempotency key does *not* create a second account (see Proof 3 for the duplicate-email consequence).
+
+> **What this proves:** the signup endpoint answers real HTTP with real status codes; account creation, hashing, and code-issuing all happened server-side without any UI.
+
+### Proof 2 — The users table stores the bcrypt hash, never the password
+
+The users table as it appeared in the database, read from Prisma Studio (`docs/evidence/1-users-table-hash.png`):
+
+![Users table with stored password hash](docs/evidence/1-users-table-hash.png)
+
+The two accounts visible in the screenshot, with their `passwordHash` column exactly as displayed (Prisma Studio truncates long values):
+
+```
+      email          |      passwordHash      |     emailVerified
+---------------------+------------------------+--------------------------
+ oluwatomisinligali@…| $2b$12$40rocxpxMVXbRP… | 2026-09-10T14:49:38.3…
+ ligalioluwatomisin@…| $2b$12$DK9uklc27tP77n… | 2026-09-11T11:11:42.6…
+```
+
+Both rows share the full name `Oluwatomisin Ligali` and hold a bcrypt hash beginning `$2b$12$` (cost factor 12). No plaintext password appears anywhere in the table — there is no column that stores one.
+
+> **What this proves:** what is stored per account is `$2b$12$…` — bcrypt, cost factor 12 — so a database leak yields salts and hashes, not credentials.
+
+### Proof 3 — Brute-force lockout: the 4th attempt is refused
+
+Four identical signup POSTs (same email, fresh idempotency keys each time) recorded in sequence:
+
+```
+--- attempt 1 ---
+HTTP/1.1 409 Conflict
+{"success":false,"error":"An account with this email already exists."}
+--- attempt 2 ---
+HTTP/1.1 409 Conflict
+{"success":false,"error":"An account with this email already exists."}
+--- attempt 3 ---
+HTTP/1.1 409 Conflict
+{"success":false,"error":"An account with this email already exists."}
+--- attempt 4 ---
+HTTP/1.1 429 Too Many Requests
+retry-after: 120
+{"success":false,"error":"Too many failed attempts. Please try again in 2 minutes."}
+```
+
+The website shows only "An account with this email already exists" for the duplicates — no hint of *why* any given attempt failed. The lockout state is metered, not binary; leaving a 2-minute buffer between attempts lets a genuine user through while a script racing faster gets refused (`retry-after: 120` tells callers to cool down). The persisted counter for the same email right after the run:
+
+```
+         email         | ip  | failures |       lockedUntil       
+-----------------------+-----+----------+-------------------------
+ zara+prod@example.com | ::1 |        3 | 2026-09-11 14:08:21.317
+```
+
+> **What this proves:** failed signup attempts are counted and escalate to a real `429 Too Many Requests` (with `retry-after`) — brute force is refused before it gets many guesses, and the count persists in the `LoginAttempt` table.
+
+### Proof 4 — A verification code exists in the database, and the same record later does not
+
+The `VerificationToken` table as it appeared **before** the code was exercised, read from Prisma Studio (`docs/evidence/3-verification-code-before-expiry.png`):
+
+![Verification code present in the database](docs/evidence/3-verification-code-before-expiry.png)
+
+At that point the table held three records for the same account (`oluwatomisinligali@gm…`) — two email-verification codes (`532299`, `095607`) and one password-reset token (`ec684d…`), exact values as displayed:
+
+```
+       identifier      |   token   |        type        |        expiresAt        
+-----------------------+-----------+--------------------+-------------------------
+ oluwatomisinligali@gm…| 532299    | email_verification | 2026-09-10T09:45:59.1…
+ oluwatomisinligali@gm…| ec684d…   | password_reset     | 2026-09-09T14:10:17.3…
+ oluwatomisinligali@gm…| 095607    | email_verification | 2026-09-12T12:39:49.7…
+```
+
+The same table in a later capture (`docs/evidence/4-verification-code-after-expiry.png`) holds only two rows — the email-verification code `095607` is no longer present:
+
+![Same table — the code record is gone](docs/evidence/4-verification-code-after-expiry.png)
+
+```
+       identifier      |   token   |        type        |        expiresAt        
+-----------------------+-----------+--------------------+-------------------------
+ oluwatomisinligali@gm…| 532299    | email_verification | 2026-09-10T09:45:59.1…
+ oluwatomisinligali@gm…| ec684d…   | password_reset     | 2026-09-09T14:10:17.3…
+```
+
+> **What this proves:** the verification code is a real database row, and once it has been used up (single-use) or expired, the same record is physically removed — it cannot be accepted later and it cannot be reused a second time.
+
+### How to reproduce
+
+1. `npm run build && next start` (the repo's documented 3000; the capture here used 3100 because 3000 was already in use).
+2. Run the Proof 1 curl and copy the verification code from the mail log; confirm the bcrypt row in `psql` with `SELECT email, "passwordHash" FROM "User";`.
+3. Re-run the Proof 1 curl three more times (new idempotency keys) and watch statuses go `409, 409, 409, 429` with `retry-after`; confirm the counter with `SELECT * FROM "LoginAttempt";`.
+4. Repeat Proof 4: re-query `VerificationToken` after the code has been consumed or expired, and see the same record is gone.

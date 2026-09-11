@@ -9,12 +9,6 @@ import React, {
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
-import { signupAction } from "@/server/actions/auth/signup";
-import { forgotPasswordAction } from "@/server/actions/auth/forgot-password";
-import { resetPasswordAction } from "@/server/actions/auth/reset-password";
-import { verifyEmailAction } from "@/server/actions/auth/verify-email";
-import { resendVerificationEmailAction } from "@/server/actions/auth/resend-verification";
-import { rotateCsrfTokenAction } from "@/server/actions/auth/csrf";
 import { clientValidation } from "@/lib/validation/auth";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -38,6 +32,28 @@ function clearIdempotencyKey() {
     window.sessionStorage.removeItem(IDEMPOTENCY_STORAGE_KEY);
   } catch {
     // storage unavailable — key will simply rotate on next render
+  }
+}
+
+interface ApiResponse {
+  success: boolean;
+  error?: string;
+  message?: string;
+}
+
+async function postJson(
+  path: string,
+  body?: Record<string, unknown>
+): Promise<ApiResponse> {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  try {
+    return (await res.json()) as ApiResponse;
+  } catch {
+    return { success: false, error: "Unexpected server response. Please try again." };
   }
 }
 
@@ -236,7 +252,7 @@ function SignInForm({
     startTransition(async () => {
       try {
         // Pre-login: rotate to a fresh CSRF token so this attempt never reuses a stale one
-        await rotateCsrfTokenAction();
+        await postJson("/api/auth/csrf-rotate");
 
         const result = await signIn("credentials", {
           email,
@@ -248,7 +264,7 @@ function SignInForm({
           setError(parseSignInError(result.error, result.code));
         } else {
           // Post-login: the authenticated session must not keep the pre-login CSRF token
-          await rotateCsrfTokenAction();
+          await postJson("/api/auth/csrf-rotate");
           router.push(callbackUrl);
           router.refresh();
         }
@@ -414,14 +430,15 @@ function SignupForm({
       return;
     }
 
-    const trimmedFormData = new FormData();
-    trimmedFormData.set("fullName", values.fullName.trim());
-    trimmedFormData.set("email", values.email.trim());
-    trimmedFormData.set("password", values.password);
-    trimmedFormData.set("idempotencyKey", getOrCreateIdempotencyKey());
+    const signupPayload = {
+      fullName: values.fullName.trim(),
+      email: values.email.trim(),
+      password: values.password,
+      idempotencyKey: getOrCreateIdempotencyKey(),
+    };
 
     startTransition(async () => {
-      const res = await signupAction(trimmedFormData);
+      const res = await postJson("/api/auth/signup", signupPayload);
       if (!res.success) {
         setError(res.error || "Failed to create account.");
       } else {
@@ -525,11 +542,8 @@ function ForgotPasswordForm({ onSwitchView }: { onSwitchView: (view: AuthView) =
     setFieldErrors(result.fieldErrors);
     if (Object.keys(result.fieldErrors).length > 0) return;
 
-    const trimmedFormData = new FormData();
-    trimmedFormData.set("email", email.trim());
-
     startTransition(async () => {
-      const res = await forgotPasswordAction(trimmedFormData);
+      const res = await postJson("/api/auth/forgot", { email: email.trim() });
       if (!res.success) {
         setError(res.error || "Failed to process request.");
       } else {
@@ -629,13 +643,12 @@ function ResetPasswordForm({
     setFieldErrors(result.fieldErrors);
     if (Object.keys(result.fieldErrors).length > 0) return;
 
-    const trimmedFormData = new FormData();
-    trimmedFormData.set("token", token);
-    trimmedFormData.set("password", password.trim());
-    trimmedFormData.set("confirmPassword", confirmPassword.trim());
-
     startTransition(async () => {
-      const res = await resetPasswordAction(trimmedFormData);
+      const res = await postJson("/api/auth/reset", {
+        token,
+        password: password.trim(),
+        confirmPassword: confirmPassword.trim(),
+      });
       if (!res.success) {
         setError(res.error || "Failed to reset password.");
       } else {
@@ -709,6 +722,24 @@ function VerifyEmailForm({
   const [isResending, setIsResending] = useState(false);
   const [cooldown, setCooldown] = useState(0);
 
+  const handleCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setCodeValue(value);
+    const err = clientValidation.verifyCode(value);
+    setFieldErrors(prev => {
+      const next = { ...prev };
+      if (err) {
+        next.code = err;
+      } else {
+        delete next.code;
+      }
+      return next;
+    });
+  };
+
+  const canSubmit =
+    clientValidation.verifyCode(codeValue) === "" && codeValue.trim() !== "";
+
   useEffect(() => {
     if (cooldown <= 0) return;
     const timer = setInterval(() => {
@@ -730,7 +761,7 @@ function VerifyEmailForm({
     setError(null);
 
     startTransition(async () => {
-      const res = await resendVerificationEmailAction(email);
+      const res = await postJson("/api/auth/resend", { email });
       setIsResending(false);
       if (!res.success) {
         setError(res.error || "Failed to resend the code.");
@@ -746,15 +777,12 @@ function VerifyEmailForm({
     setError(null);
     setSuccessMessage(null);
 
-    const trimmedCode = codeValue.trim();
-    if (!trimmedCode) {
-      setFieldErrors({ code: "Verification code cannot be empty" });
-      return;
-    }
-    setFieldErrors({});
+    const codeError = clientValidation.verifyCode(codeValue);
+    setFieldErrors(codeError ? { code: codeError } : {});
+    if (codeError) return;
 
     startTransition(async () => {
-      const res = await verifyEmailAction(trimmedCode);
+      const res = await postJson("/api/auth/verify", { code: codeValue.trim() });
       if (!res.success) {
         setError(res.error || "Verification failed.");
       } else {
@@ -783,10 +811,10 @@ function VerifyEmailForm({
             autoComplete="one-time-code"
             placeholder="Paste the code from your email"
             error={fieldErrors.code}
-            onChange={e => setCodeValue(e.target.value)}
+            onChange={handleCodeChange}
           />
 
-          <Button type="submit" disabled={!codeValue.trim()} isLoading={isPending} className="fh-auth-submit">
+          <Button type="submit" disabled={!canSubmit} isLoading={isPending} className="fh-auth-submit">
             Verify email
           </Button>
 
