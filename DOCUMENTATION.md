@@ -86,7 +86,7 @@ This is the journey a person takes from arriving to logged-out to sitting on the
 **Step 5 — The guarded dashboard**
 - **User:** (passively) is on `/dashboard`.
 - **Frontend:** requests any `/dashboard/*` path.
-- **Server:** `src/middleware.ts` runs on every dashboard route and, without a session, redirects to `/auth?callbackUrl=…`. Even if that's bypassed, `src/app/(dashboard)/layout.tsx` re-checks `auth()` server-side before rendering anything. With a session, only then does the user see "You Are Signed In — Welcome, name".
+- **Server:** `proxy.ts` runs on every dashboard route and, without a session, redirects to `/auth?callbackUrl=…`. Even if that's bypassed, `src/app/(dashboard)/layout.tsx` re-checks `auth()` server-side before rendering anything. With a session, only then does the user see "You Are Signed In — Welcome, name".
 
 **Step 6 — Forgot password**
 - **User:** from sign-in clicks "Forgot password" and enters the account email.
@@ -103,7 +103,7 @@ This is the journey a person takes from arriving to logged-out to sitting on the
 - **Frontend:** calls `signOutAction` (`src/server/actions/auth/signout.ts`) via a transition.
 - **Server:** Auth.js's server-side sign-out clears the session cookie and returns everyone to `/auth`. Logout is always a server action — never just a client-side disappearing act.
 
-By the end, the reader should be able to name the file for any behaviour: forms → `page.tsx`, business rules → `validation/auth.ts` + `server/actions/auth/*`, the sign-in gatekeeping → `auth.ts`, the door → `middleware.ts` + the dashboard layout, and the two detours → `forgot-password.ts` + `reset-password.ts`.
+By the end, the reader should be able to name the file for any behaviour: forms → `page.tsx`, business rules → `validation/auth.ts` + `server/actions/auth/*`, the sign-in gatekeeping → `auth.ts`, the door → `proxy.ts` + the dashboard layout, and the two detours → `forgot-password.ts` + `reset-password.ts`.
 
 ## Section 4: The Data Model
 
@@ -216,7 +216,7 @@ These are the concrete "last line of defence" rules, each preventing a state tha
 
 ## Section 5: The Concepts
 
-These twelve concepts were chosen because each one maps to a real line code added while building the authentication screen: password hashing, validation schemas + client mirror, rate limiting, session management, email verification expiry, resend cooldown, reset token lifetime, unique-email constraint, idempotent signup, protected routes, CSRF rotation, and accessible form binding.
+These eight concepts are exactly the eight the brief asks for, each one mapped to a real line of code that exists in this repository: password hashing, rate limiting, client-side versus server-side validation, session management and why I chose sessions, token and code expiry and why it must live in the database, idempotency, database constraints as a last line of defence, and protected routes.
 
 ### 1. Password Hashing
 
@@ -237,24 +237,7 @@ Cost 12 means each hash takes roughly 300–500ms — trivial for one honest log
 
 **What I chose against, and why.** SHA-256 is a general-purpose hash: fast, which is precisely why it's wrong for passwords — an attacker can test billions a second. Argon2 is arguably stronger (memory-hard, resists GPU farms), but bcrypt is well understood, well supported everywhere, and I could reason about its behavior in this stack. Separately, I chose `bcryptjs` over the native `bcrypt` build specifically to avoid native-compile issues across environments; the small speed cost is irrelevant at cost 12.
 
-### 2. Server-side Validation as Schemas, Mirrored on the Client
-
-**What it is.** Every input rule (email shape, password length and character classes, name rules) is written once, as a Zod schema — a declarative "rule sheet" — and both the browser and the server draw from that same sheet.
-
-**Why it is needed.** If rules are hand-written inside each handler, they drift: signup checks one thing, login checks another, and the client shows different errors than the server produces. Worse, client-only validation is theater — anyone can call the server without the page. A single schema means the one source of truth describes both the nice-to-have feedback and the must-have gate.
-
-**How I implemented it.** All rules live in `src/lib/validation/auth.ts`:
-```ts
-const passwordSchema = z.string().trim().min(1, "Password is required.")
-  .min(8, "Password must be at least 8 characters long.")
-  .max(64, "Password must be at most 64 characters long.")
-  .superRefine((value, ctx) => { /* lowercase, uppercase, digit, special */ });
-```
-Server actions call `validateSignupInput`, `loginSchema.safeParse` (inside `authorize`, `auth.ts:68`), `validateForgotPasswordInput`, `validateResetPasswordInput`. On the client, the same sheets are exported as `clientValidation` and run on every keystroke in `page.tsx` (`handleFieldChange`), so the errors that appear while typing are exactly the errors the server would produce.
-
-**What I chose against, and why.** Scattered `if/else` checks inside each handler (drift and repetition), and HTML5-only validation with no server counterpart (the browser can be ignored). I also chose to derive the shared Zod schemas rather than keep two separate rule sets — the alternative of "client rules" + "server rules" guarantees eventual divergence.
-
-### 3. Rate Limiting with Progressive Lockout
+### 2. Rate Limiting with Progressive Lockout
 
 **What it is.** After a few failed attempts, the pair "email + IP address" is locked out for a time that grows with each further failure — starting at 2 minutes, doubling, capped at 24 hours — tracked in the database.
 
@@ -270,7 +253,24 @@ export function lockoutDurationMinutes(failures: number): number {
 ```
 `enforceLoginRateLimit`/`recordLoginFailure` are called from all four entry points (login `auth.ts:70`, signup `signup.ts:67`, forgot `forgot-password.ts:35`, resend `resend-verification.ts:39`); every failure increments the count, a successful login calls `clearLoginFailures`.
 
-**What I chose against, and why.** An in-memory counter per IP was my first cut (`src/lib/security/rate-limit.ts` still exists but is **not wired in**) — it resets on every restart and can't see the email behind a shared IP. I also ruled out a fixed window per IP alone, because a rotating attacker slips through and a whole office behind one IP gets locked out collectively. The `(email, ip)` pair, stored and escalating, was the deliberate middle ground.
+**What I chose against, and why.** An in-memory counter per IP was my first cut (`src/lib/security/rate-limit.ts`), abandoned and removed from the repository in review — it resets on every restart and can't see the email behind a shared IP. I also ruled out a fixed window per IP alone, because a rotating attacker slips through and a whole office behind one IP gets locked out collectively. The `(email, ip)` pair, stored and escalating, was the deliberate middle ground.
+
+### 3. Server-side Validation as Schemas, Mirrored on the Client
+
+**What it is.** Every input rule (email shape, password length and character classes, name rules) is written once, as a Zod schema — a declarative "rule sheet" — and both the browser and the server draw from that same sheet.
+
+**Why it is needed.** If rules are hand-written inside each handler, they drift: signup checks one thing, login checks another, and the client shows different errors than the server produces. Worse, client-only validation is theater — anyone can call the server without the page. A single schema means the one source of truth describes both the nice-to-have feedback and the must-have gate.
+
+**How I implemented it.** All rules live in `src/lib/validation/auth.ts`:
+```ts
+const passwordSchema = z.string().trim().min(1, "Password is required.")
+  .min(8, "Password must be at least 8 characters long.")
+  .max(64, "Password must be at most 64 characters long.")
+  .superRefine((value, ctx) => { /* lowercase, uppercase, digit, special */ });
+```
+Server actions call `validateSignupInput`, `loginSchema.safeParse` (inside `authorize`, `auth.ts:68`), `validateForgotPasswordInput`, `validateResetPasswordInput`. On the client, the same sheets are exported as `clientValidation` and run on every keystroke in `page.tsx` (`handleFieldChange`), so the errors that appear while typing are exactly the errors the server would produce.
+
+**What I chose against, and why.** Scattered `if/else` checks inside each handler (drift and repetition), and HTML5-only validation with no server counterpart (the browser can be ignored). I also chose to derive the shared Zod schemas rather than keep two separate rule sets — the alternative of "client rules" + "server rules" guarantees eventual divergence.
 
 ### 4. Session Management and Cookie Configuration
 
@@ -288,11 +288,11 @@ Signed with `NEXTAUTH_SECRET`, `trustHost: true` for the dev host header.
 
 **What I chose against, and why.** Database sessions (Adapter-based) would let me revoke a session instantly but cost a table and a DB query on every request and a sync point between DB and cookie. I chose the JWT for statelessness — with `maxAge: 30 days` per the product spec. I also explicitly chose 30-day persistence over "close the browser = logged out" (`maxAge: 0`), accepting that a stolen laptop stays logged in for up to 30 days in exchange for the spec'd UX; deactivation is still enforced at login time via `deactivatedAt`.
 
-### 5. Email Verification Codes That Expire in the Database
+### 5. Token and Code Expiry, and Why Expiry Must Live in the Database
 
-**What it is.** The six-digit code sent at signup is stored with a real expiry timestamp in the database. Whether it's still usable is decided by comparing against that stored time — not by anything in the browser.
+**What it is.** Every secret handed to the user — the six-digit verification code at signup and the password-reset link token — is stored in the database with a real expiry timestamp. Whether either is still usable at the moment it's used is decided by comparing against that stored time; nothing in the browser is trusted.
 
-**Why it is needed.** If expiry only existed in the UI (a timer on the page), anyone who calls the server directly — or whose page sat open — would keep a usable code far past its intended life. An attacker with an intercepted or old email could verify with a stale code. The expiry must survive restarts, be visible in a single source, and be enforced exactly once, at the moment of use.
+**Why it is needed.** If expiry only existed in the UI (a timer on the page), anyone who calls the server directly — or whose page sat open — would keep a usable code or link far past its intended life. An attacker with an intercepted email could verify or reset with stale credentials. For resets the stakes are higher: a link that never expires turns an email leak months later into full account takeover, and a reusable token lets an interceptor reset again after the owner already did. Expiry must survive restarts, live in one inspectable place, and be enforced at the moment of use — and deletion on success makes every secret single-use.
 
 **How I implemented it.** Signup writes the code with `expiresAt = now + 24h` (`signup.ts:97`). `verify-email.ts` checks the stored timestamp:
 ```ts
@@ -301,62 +301,18 @@ if (new Date() > record.expiresAt) {
   return { success: false, error: "Verification code has expired. Please request a new one." };
 }
 ```
-and deletes the code on success, so it also works only once.
-
-**What I chose against, and why.** A pure client-side countdown (trivially bypassed), and storing the code without an expiry and doing "best-effort cleanup" — that leaves expired-but-usable codes in the data. Also, I kept the code itself as the DB key (`token @unique`) rather than deriving verification from a signed link, because a 6-digit code is meant to be typed by a person and a signed link would be the wrong UX for this step.
-
-### 6. Resend Cooldown Enforced on the Server
-
-**What it is.** After a verification code is emailed, the server refuses to send another to the same account for 60 seconds — measured from the stored timestamp of the last code, not from what the page displays.
-
-**Why it is needed.** Without it, a spam loop becomes an email-bombing engine: call "resend" a hundred times and the mailer fires a hundred emails, and every one is a fresh foot-gun for an attacker blasting someone's inbox (and your SMTP reputation). A button that disables itself client-side is no defense — the server action can be called directly.
-
-**How I implemented it.** `resend-verification.ts`:
-```ts
-if (existing && now - existing.createdAt.getTime() < RESEND_COOLDOWN_MS) {
-  return { success: false, error: `Please wait ${seconds} seconds before requesting a new code.` };
-}
-```
-`RESEND_COOLDOWN_MS = 60_000`. Only when the cooldown passes does the action delete old codes, write a fresh 24-hour code, and mail it.
-
-**What I chose against, and why.** Client-only cooldowns (a `disabled` button or `setTimeout`) — defeated by a refresh or a direct call. I also chose the cooldown to bind to the account (identifier), not just the IP, so that one misbehaving session can't silently starve a different legitimate user of their own resend; the escalating lockout already covers IP-level abuse.
-
-### 7. Password Reset Tokens: Single-Use and Time-Limited
-
-**What it is.** Requesting a reset produces one random secret, valid for exactly one hour, usable exactly once — the email contains a link with that token, and after it's used it no longer exists.
-
-**Why it is needed.** A reset link is a "change this password" key handed through email. If it never expires, an email leak months later gives full account takeover. If it's reusable, an attacker who intercepts it after the owner resets can reset again. Both properties must be enforced by the database using the token itself, because the email chain is outside your control.
-
-**How I implemented it.** `forgot-password.ts` mints the token with a 1-hour expiry and replaces any older ones:
+and deletes the code on success, so it works only once. Reset tokens take the same shape with a 1-hour expiry; `forgot-password.ts` mints them and replaces any older ones:
 ```ts
 const token = crypto.randomBytes(32).toString("hex");
 const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 await prisma.verificationToken.deleteMany({ where: { identifier: email, type: "password_reset" } });
 await prisma.verificationToken.create({ data: { identifier: email, token, type: "password_reset", expiresAt } });
 ```
-`reset-password.ts` rejects expired tokens (deleting them) and deletes the token immediately after a successful reset — so the same link is dead the moment it's used.
+`reset-password.ts` rejects expired tokens (deleting them) and deletes the token immediately after a successful reset — the same link is dead the moment it's used.
 
-**What I chose against, and why.** Short reset codes (six digits) are guessable under a one-hour window — fine for a low-value verification step, unacceptable for account takeover, so resets use 64 hex characters of randomness. I also ruled out signing the token in the link but keeping it alive longer (a JWT in the email would still be a live key with no DB trace, complicating single-use), preferring a database row I can inspect, expire, and destroy.
+**What I chose against, and why.** A pure client-side countdown (trivially bypassed), storing secrets with no expiry and doing "best-effort cleanup" (leaves expired-but-usable values in the data), and short reset codes (six digits are guessable under a one-hour window — fine for low-value verification, unacceptable for account takeover, so resets use 64 hex characters of randomness). I also kept the code itself as the DB key (`token @unique`) and the reset as a plain database row rather than a signed JWT in the link — a row I can inspect, expire, and destroy.
 
-### 8. Unique Email Constraint at the Database Level
-
-**What it is.** The `User` table declares `email` unique at the schema level, so the database itself refuses a second row with the same address — even if every application-level check fails to notice.
-
-**Why it is needed.** Application code can race: two "check email, then insert" steps run at the same instant can both pass the check and both insert. The constraint is the last line of defence that makes a duplicate account impossible regardless of calling code, timing, or bugs — and it's the trap that gives the idempotent signup (concept 9) its error to catch.
-
-**How I implemented it.** `prisma/schema.prisma`:
-```prisma
-model User {
-  email String @unique
-  ...
-  @@index([email])
-}
-```
-Signup catches the resulting `P2002` error and reports "An account with this email already exists" (`signup.ts:159`) and counts it as a failed attempt.
-
-**What I chose against, and why.** Relying on a find-then-create check alone (the classic race), and relying on the idempotency ledger to catch duplicates through app logic. Those are good UX guards but not guarantees; the unique index is the only one that cannot race. The duplicate `@@index([email])` is kept because email lookups are the hottest path in this slice.
-
-### 9. Idempotent Signup
+### 6. Idempotent Signup
 
 **What it is.** The signup request carries a one-time key. The database remembers which keys have already created an account, so a submit that has already succeeded replays the exact same outcome — one key, one account, no matter how many times it's sent.
 
@@ -375,50 +331,33 @@ The user, code, and request row are created in one `$transaction`. If two reques
 
 **What I chose against, and why.** A client-side "disable the button while pending" (bypassed by refresh and direct calls), and a plain duplicate-email error for the second click (breaks the correct expectation that a submitted form shouldn't punish a user for a network retry). The ledger approach makes the second copy of a *same* submission a harmless no-op while a genuinely *different* email still gets its own correct duplicate rejection.
 
-### 10. Protected Route Handling
+### 7. Database Constraints as a Last Line of Defence
 
-**What it is.** `/dashboard` (and everything under it) is unreachable without a valid session: the edge middleware turns unauthenticated visitors back to `/auth`, and the dashboard's own layout re-checks the session before rendering.
+**What it is.** The `User` table declares `email` unique at the schema level, so the database itself refuses a second row with the same address — even if every application-level check fails to notice.
+
+**Why it is needed.** Application code can race: two "check email, then insert" steps run at the same instant can both pass the check and both insert. The constraint is the last line of defence that makes a duplicate account impossible regardless of calling code, timing, or bugs — and it's the trap that gives the idempotent signup (concept 6) its error to catch.
+
+**How I implemented it.** `prisma/schema.prisma`:
+```prisma
+model User {
+  email String @unique
+  ...
+  @@index([email])
+}
+```
+Signup catches the resulting `P2002` error and reports "An account with this email already exists" (`signup.ts:159`) and counts it as a failed attempt.
+
+**What I chose against, and why.** Relying on a find-then-create check alone (the classic race), and relying on the idempotency ledger to catch duplicates through app logic. Those are good UX guards but not guarantees; the unique index is the only one that cannot race. The duplicate `@@index([email])` is kept because email lookups are the hottest path in this slice.
+
+### 8. Protected Route Handling
+
+**What it is.** `/dashboard` (and everything under it) is unreachable without a valid session: the edge proxy turns unauthenticated visitors back to `/auth`, and the dashboard's own layout re-checks the session before rendering.
 
 **Why it is needed.** The dashboard is the reason the authentication exists — it must be gate-kept. A client-side "hide the page if not logged in" is cosmetic and leaves the page bytes reachable; the actual gate must happen server-side, before any dashboard code runs, so there is nothing to fetch, execute, or read without a session.
 
-**How I implemented it.** `src/middleware.ts` runs Auth.js's `authConfig` at the edge with a route matcher `["/dashboard/:path*"]`. The `authorized` callback returns `isLoggedIn` for dashboard paths, which makes middleware redirect to `/auth?callbackUrl=…`. As a second check, `(dashboard)/layout.tsx` calls `auth()` and `redirect("/auth?view=signin")` if no user is present, before children render.
+**How I implemented it.** `proxy.ts` wraps `auth()` at the edge with a route matcher `["/dashboard/:path*", "/auth"]`. For dashboard paths with no `session.user`, it redirects to `/auth?callbackUrl=…`. As a second check, `(dashboard)/layout.tsx` calls `auth()` and `redirect("/auth?view=signin")` if no user is present, before children render.
 
-**What I chose against, and why.** Guarding *only* in the layout (it works, but everything still passes through the router to reach it) and *only* in middleware (single point of failure if the matcher is ever mistyped). Two independent layers cost little and mean a matcher typo can't silently open the dashboard. I also chose server-side enforcement over any client-side redirect, because the client cannot be trusted to be the authority on access.
-
-### 11. CSRF Tokens, Rotation, and Server-Side Logout
-
-**What it is.** Sensitive actions (log in, log out) must carry a per-session anti-forgery token, stored as a signed double-submit cookie. The token is deliberately replaced — rotated — before and after each login, and logout is performed by the server, destroying the session cookie properly.
-
-**Why it is needed.** CSRF is the "malicious site enlists your logged-in browser" attack: a foreign page submits your forms using your cookies. The token makes the request fail unless it matches the cookie the server gave you. Rotation closes the subtler hole of *session fixation* — a planted, known token value that the attacker could predict; a fresh token before and after login makes a predicted value useless. Logout must be server-side because a client-only "log out" can leave a live session cookie behind.
-
-**How I implemented it.** Auth.js issues a double-submit cookie `token|sha256(token+secret)`. Because this Auth.js version did not rotate it on credentials login (verified empirically), I added explicit rotation in `src/lib/auth/csrf.ts`:
-```ts
-export function createCsrfToken(): string {
-  const token = crypto.randomBytes(32).toString("hex");
-  const hash = crypto.createHash("sha256").update(`${token}${secret}`).digest("hex");
-  return `${token}|${hash}`;
-}
-```
-`rotateCsrfTokenAction` writes it (URL-encoded, exactly as Auth.js encodes it), called in `page.tsx` before `signIn` and again after success. Logout is `signoutAction` (`src/server/actions/auth/signout.ts`), a server action invoking Auth.js `signOut`, wired to the dashboard's `SignOutButton`.
-
-**What I chose against, and why.** Trusting Auth.js's native rotation — it demonstrably didn't rotate the CSRF cookie in this version/config, so I built the rotation into the flow myself in the same cookie format. I also chose to build *on* Auth.js's scheme (same `token|hash`, same secret) rather than inventing a separate CSRF system, since a parallel scheme would mean two tokens to keep in sync. Logout went server-side specifically so the session cookie is cleared by the framework rather than merely "hidden" in the client.
-
-### 12. Accessible Input Groups: Bound Labels and Visible Focus
-
-**What it is.** Every field's label is programmatically connected to its input, errors and hints are announced to assistive tools, and the input shows a visible focus ring when navigated by keyboard.
-
-**Why it is needed.** A label merely *near* an input is useless to a screen reader and unclickable; a focus ring that's removed (`outline: none` with no replacement) makes keyboard users unable to tell where they are — a working app that excludes a class of users. This isn't polish: it's the difference between the form being operable and being a wall.
-
-**How I implemented it.** `src/components/ui/Input.tsx`:
-```tsx
-const inputId = id ?? `${useId()}-input`;
-...
-<label htmlFor={inputId} className="fh-input-label">{label}</label>
-<input id={inputId} aria-invalid={error ? true : undefined} aria-describedby={describedBy} ... />
-```
-`useId()` guarantees unique ids per instance, so no two field bindings can collide; errors carry `role="alert"` and are linked via `aria-describedby`. Focus is visible only for keyboard users via `:focus-visible` rings in `src/app/globals.css:129`.
-
-**What I chose against, and why.** Stable-but-copied index-based ids (e.g. `email-1`, `email-2`) that collide the moment form layout shifts, and hidden focus styles. I deliberately used the framework's collision-free id generation and chose `:focus-visible` over `:focus` so mouse users don't see a leftover ring while keyboard users always see where they are.
+**What I chose against, and why.** Guarding *only* in the layout (it works, but everything still passes through the router to reach it) and *only* in the proxy (single point of failure if the matcher is ever mistyped). Two independent layers cost little and mean a matcher typo can't silently open the dashboard. I also chose server-side enforcement over any client-side redirect, because the client cannot be trusted to be the authority on access.
 
 ## Section 6: What Went Wrong
 
