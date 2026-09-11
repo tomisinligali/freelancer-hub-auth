@@ -41,6 +41,12 @@ function classifyUniqueViolation(
   return { isUnique: false };
 }
 
+function mentionsConstraint(targets: string[], name: string): boolean {
+  // PostgreSQL reports the constraint name ("User_email_key"), while MySQL/SQLite
+  // report the field name ("email"). Match either so the friendly error fires.
+  return targets.some(t => t.toLowerCase().includes(name.toLowerCase()));
+}
+
 function generateVerificationCode(): string {
   const raw = crypto.randomBytes(32);
   return (raw.readUInt32BE(0) % 1000000).toString().padStart(6, "0");
@@ -142,7 +148,7 @@ export async function signupAction(formData: FormData): Promise<ActionResponse> 
         const violation = classifyUniqueViolation(err);
         if (!violation.isUnique) throw err;
 
-        if (violation.targets.includes("idempotencyKey")) {
+        if (mentionsConstraint(violation.targets, "idempotencyKey")) {
           // Lost the idempotency race: mirror the winner's outcome, don't re-enqueue
           const winner = await prisma.accountRequest.findUnique({
             where: { idempotencyKey },
@@ -156,7 +162,7 @@ export async function signupAction(formData: FormData): Promise<ActionResponse> 
           };
         }
 
-        if (violation.targets.includes("email")) {
+        if (mentionsConstraint(violation.targets, "email")) {
           await recordLoginFailure(email, ip);
           return {
             success: false,
@@ -164,7 +170,7 @@ export async function signupAction(formData: FormData): Promise<ActionResponse> 
           };
         }
 
-        if (violation.targets.includes("token")) {
+        if (mentionsConstraint(violation.targets, "token")) {
           continue; // astronomically rare code collision — regenerate
         }
 
